@@ -12,7 +12,7 @@ asar: true
 # directory with SADA_STUDIO_UPDATE_URL or update.json (generic provider), see README.
 publish:
   provider: github
-  owner: sadakhutbah
+  owner: thesadaproject
   repo: sada-studio
   releaseType: release
 extraResources:
