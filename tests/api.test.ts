@@ -103,6 +103,10 @@ describe("battement et direct manuel", () => {
     });
     expect(toWireReport({ ...report, state: "reconnecting", health: { ...report.health, checks: [] } })).toMatchObject({ state: "live", health: {} });
     expect(toWireReport({ ...report, state: "error" }).state).toBe("error");
+    // pas encore de contrôle : ni caméra ni micro n'est affirmé absent (pas de fausse alerte au démarrage)
+    const first = toWireReport({ ...report, camera: false, micro: false, health: { ...report.health, checks: [] } });
+    expect(first).not.toHaveProperty("camera");
+    expect(first).not.toHaveProperty("microphone");
   });
 
   it("lit current.slot_id, starts_at/ends_at, next et slots du contrat", async () => {

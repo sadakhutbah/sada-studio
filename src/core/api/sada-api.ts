@@ -248,7 +248,9 @@ export function toWireReport(r: HeartbeatReport): Record<string, unknown> {
   if (hours !== undefined) health.update_hours = hours;
   if (sleep !== undefined) health.sleep_disabled = sleep;
   const state = r.state === "live" || r.state === "connecting" || r.state === "reconnecting" ? "live" : r.state === "error" ? "error" : "standby";
-  return { state, version: r.version, camera: r.camera, microphone: r.micro, bitrate_kbps: r.bitrate, health };
+  // Avant le premier contrôle du poste (aucun contrôle rapporté), caméra et micro sont inconnus : on ne les affirme pas absents.
+  const known = checks.length > 0 ? { camera: r.camera, microphone: r.micro } : {};
+  return { state, version: r.version, ...known, bitrate_kbps: r.bitrate, health };
 }
 
 /** Tolérant : une réponse partielle ne doit jamais faire tomber la boucle de battement. */
