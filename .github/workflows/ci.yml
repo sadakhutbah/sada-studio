@@ -60,6 +60,11 @@ jobs:
         shell: bash
         run: |
           flags=""
+          # Secrets that are not set arrive as empty strings; electron-builder then resolves an empty
+          # CSC_LINK to the working directory ("not a file"), so drop every empty signing variable.
+          for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            [ -z "${!v}" ] && unset "$v"
+          done
           if [ -z "$CSC_LINK" ]; then
             export CSC_IDENTITY_AUTO_DISCOVERY=false
             echo "No signing certificate for ${{ matrix.name }}: unsigned build."
