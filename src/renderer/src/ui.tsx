@@ -70,7 +70,11 @@ export function ErrorBox({ children }: { children: ReactNode }) {
   );
 }
 
-const PILL: Record<SessionStatus, string> = {
+export type PillKey = SessionStatus | "standby" | "armed";
+
+const PILL: Record<PillKey, string> = {
+  standby: "bg-paper-2 text-muted",
+  armed: "bg-warn-bg text-warn",
   idle: "bg-paper-2 text-muted",
   connecting: "bg-warn-bg text-warn",
   live: "bg-live text-white",
@@ -79,7 +83,7 @@ const PILL: Record<SessionStatus, string> = {
   stopping: "bg-paper-2 text-muted",
 };
 
-export function StatusPill({ status, label }: { status: SessionStatus; label: string }) {
+export function StatusPill({ status, label }: { status: PillKey; label: string }) {
   return (
     <span
       role="status"
@@ -87,7 +91,7 @@ export function StatusPill({ status, label }: { status: SessionStatus; label: st
     >
       <span
         aria-hidden
-        className={`size-2 rounded-full ${status === "live" ? "animate-pulse bg-live-off" : status === "idle" || status === "stopping" ? "bg-dot-off" : "bg-current"}`}
+        className={`size-2 rounded-full ${status === "live" ? "animate-pulse bg-live-off" : status === "idle" || status === "stopping" || status === "standby" ? "bg-dot-off" : "bg-current"}`}
       />
       {label}
     </span>
