@@ -49,6 +49,7 @@ export const fr = {
     kind: "Type",
     khutba: "Khutba",
     dars: "Dars",
+    conference: "Conférence",
     titleField: "Titre",
     titlePlaceholder: "Khutba du vendredi",
   },

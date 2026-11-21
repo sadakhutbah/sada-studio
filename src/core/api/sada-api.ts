@@ -3,11 +3,13 @@ import type { WhipSignaling } from "../transport/whip";
 import type {
   CurrentLive,
   DeviceCredentials,
+  HealthCheck,
   HeartbeatReply,
   HeartbeatReport,
   PairingApi,
   PairingChallenge,
   PairPoll,
+  RotatedCredentials,
   Slot,
   StreamKind,
   StreamMeta,
@@ -69,9 +71,10 @@ export class SadaHttpApi implements StudioApi {
   }
 
   readonly pairing: PairingApi = {
-    start: async (baseUrl) => {
+    start: async (baseUrl, machineName) => {
       const base = normalizeBaseUrl(baseUrl);
-      const d = await this.json<Record<string, unknown>>("POST", `${API}/studio/pair/start`, { base, json: {} });
+      const name = (machineName ?? "").trim().slice(0, 60);
+      const d = await this.json<Record<string, unknown>>("POST", `${API}/studio/pair/start`, { base, json: name ? { name } : {} });
       const challenge: PairingChallenge = {
         deviceCode: String(d.device_code ?? ""),
         userCode: String(d.user_code ?? ""),
@@ -83,29 +86,32 @@ export class SadaHttpApi implements StudioApi {
     },
     poll: async (baseUrl, deviceCode) => {
       const base = normalizeBaseUrl(baseUrl);
-      try {
-        const d = await this.json<Record<string, unknown>>("POST", `${API}/studio/pair/poll`, { base, json: { device_code: deviceCode } });
-        if (d.device_secret && d.device_id) {
-          const m = (d.mosque ?? {}) as Record<string, unknown>;
-          return {
-            status: "paired",
-            deviceId: String(d.device_id),
-            deviceSecret: String(d.device_secret),
-            mosque: { name: String(m.name ?? "Mosquée"), id: typeof m.id === "number" ? m.id : undefined, slug: typeof m.slug === "string" ? m.slug : undefined },
-          } satisfies PairPoll;
-        }
-        return { status: "pending" };
-      } catch (e) {
-        if (e instanceof ApiError && (e.status === 404 || e.status === 410)) return { status: "expired" };
-        if (e instanceof ApiError && e.status === 403) return { status: "denied" };
-        if (e instanceof ApiError && e.status === 429) return { status: "pending" };
-        throw e;
+      const res = await this.raw("POST", `${API}/studio/pair/poll`, {
+        base,
+        body: JSON.stringify({ device_code: deviceCode }),
+        headers: { "Content-Type": "application/json" },
+      });
+      if (res.status === 429) return { status: "pending" }; // trop de demandes : on attend simplement
+      const d = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+      if (res.ok && d?.status === "approved" && d.device_id && d.device_secret) {
+        const m = (d.mosque ?? {}) as Record<string, unknown>;
+        return {
+          status: "paired",
+          deviceId: String(d.device_id),
+          deviceSecret: String(d.device_secret),
+          mosque: { name: String(m.name ?? "Mosquée"), id: typeof m.id === "number" ? m.id : undefined, slug: typeof m.slug === "string" ? m.slug : undefined },
+        } satisfies PairPoll;
       }
+      if (res.ok) return { status: "pending" };
+      // 404 inconnu, 410 expiré / déjà réclamé : il faut un nouveau code. 410 « revoked » : l'appareil a été retiré avant la fin.
+      if (res.status === 410 && d?.status === "revoked") return { status: "denied" };
+      if (res.status === 404 || res.status === 410) return { status: "expired" };
+      throw new ApiError(res.status, String(d?.message ?? d?.error ?? `Erreur ${res.status}`));
     },
   };
 
   async heartbeat(report: HeartbeatReport): Promise<HeartbeatReply> {
-    const d = await this.json<Record<string, unknown>>("POST", `${API}/studio/heartbeat`, { json: report, device: true });
+    const d = await this.json<Record<string, unknown>>("POST", `${API}/studio/heartbeat`, { json: toWireReport(report), device: true });
     return normalizeReply(d);
   }
 
@@ -115,6 +121,10 @@ export class SadaHttpApi implements StudioApi {
 
   async stopLive(): Promise<void> {
     await this.json("POST", `${API}/studio/live/stop`, { json: {}, device: true });
+  }
+
+  async unpair(): Promise<void> {
+    await this.json("POST", `${API}/studio/unpair`, { json: {}, device: true });
   }
 
   readonly whip: WhipSignaling = {
@@ -190,8 +200,8 @@ export class SadaHttpApi implements StudioApi {
     } catch {
       throw new ApiError(0, "Serveur Sada injoignable.");
     }
-    if (o.device && (res.status === 401 || res.status === 403)) {
-      // Le secret de l'appareil est refusé : il a été révoqué côté console.
+    if (o.device && res.status === 401) {
+      // Le secret de l'appareil est refusé (code « invalid » ou « revoked ») : il n'est plus appairé.
       throw new DeviceRevokedError();
     }
     return res;
@@ -207,26 +217,42 @@ function toMs(v: unknown): number | null {
   return null;
 }
 
-const kind = (v: unknown): StreamKind => (v === "dars" ? "dars" : "khutba");
+const kind = (v: unknown): StreamKind => (v === "dars" ? "dars" : v === "conference" ? "conference" : "khutba");
 
+/** Un créneau tel que le serveur le décrit : `slot_id`, `type`, `title`, `starts_at`, `ends_at` (ISO UTC). */
 function normalizeSlot(raw: unknown): Slot | null {
   const s = raw as Record<string, unknown> | null;
   if (!s) return null;
-  const startsAt = toMs(s.starts_at ?? s.start);
+  const startsAt = toMs(s.starts_at);
   if (startsAt === null) return null;
   return {
-    id: s.id === undefined ? undefined : String(s.id),
+    id: s.slot_id === undefined || s.slot_id === null ? undefined : String(s.slot_id),
     type: kind(s.type),
     title: String(s.title ?? ""),
     startsAt,
-    endsAt: toMs(s.ends_at ?? s.end),
+    endsAt: toMs(s.ends_at),
   };
+}
+
+/** Le contrôle `id` du poste est-il explicitement mauvais ou bon ? `undefined` quand il n'a pas été fait (jamais un faux problème). */
+const flag = (checks: HealthCheck[], id: string): boolean | undefined => checks.find((c) => c.id === id)?.ok;
+
+/** Corps du battement tel que le contrat le décrit (docs/studio-devices.md). */
+export function toWireReport(r: HeartbeatReport): Record<string, unknown> {
+  const checks = r.health.checks;
+  const health: Record<string, boolean> = {};
+  const auto = flag(checks, "windows_autologon");
+  const hours = flag(checks, "windows_update_active_hours");
+  const sleep = flag(checks, "sleep");
+  if (auto !== undefined) health.auto_login = auto;
+  if (hours !== undefined) health.update_hours = hours;
+  if (sleep !== undefined) health.sleep_disabled = sleep;
+  const state = r.state === "live" || r.state === "connecting" || r.state === "reconnecting" ? "live" : r.state === "error" ? "error" : "standby";
+  return { state, version: r.version, camera: r.camera, microphone: r.micro, bitrate_kbps: r.bitrate, health };
 }
 
 /** Tolérant : une réponse partielle ne doit jamais faire tomber la boucle de battement. */
 export function normalizeReply(d: Record<string, unknown>): HeartbeatReply {
-  const schedule = Array.isArray(d.schedule) ? d.schedule.map(normalizeSlot).filter((s): s is Slot => s !== null) : [];
-  schedule.sort((a, b) => a.startsAt - b.startsAt);
   const c = d.current as Record<string, unknown> | null | undefined;
   const current: CurrentLive | null = c
     ? {
@@ -236,10 +262,20 @@ export function normalizeReply(d: Record<string, unknown>): HeartbeatReply {
         slotId: c.slot_id === undefined || c.slot_id === null ? undefined : String(c.slot_id),
       }
     : null;
-  return {
-    config: (d.config as Record<string, unknown>) ?? {},
-    schedule,
-    command: d.command === "live" ? "live" : "idle",
-    current,
-  };
+  // Le créneau en cours, le suivant, puis les cinq suivants : une seule liste triée, sans doublon.
+  const raw = [c?.source === "schedule" ? c : null, d.next, ...(Array.isArray(d.slots) ? d.slots : [])];
+  const schedule: Slot[] = [];
+  for (const r of raw) {
+    const slot = normalizeSlot(r);
+    if (slot && !schedule.some((x) => (x.id && slot.id ? x.id === slot.id : x.startsAt === slot.startsAt && x.title === slot.title))) schedule.push(slot);
+  }
+  schedule.sort((a, b) => a.startsAt - b.startsAt);
+  const cfg = { ...(d.config as Record<string, unknown> | undefined) };
+  if (cfg.heartbeat_interval === undefined) cfg.heartbeat_interval = cfg.heartbeat_interval_s;
+  const cr = d.credentials as Record<string, unknown> | null | undefined;
+  const credentials: RotatedCredentials | undefined =
+    cr && typeof cr.device_secret === "string" && cr.device_secret ? { deviceId: String(cr.device_id ?? ""), deviceSecret: cr.device_secret } : undefined;
+  const reply: HeartbeatReply = { config: cfg, schedule, command: d.command === "live" ? "live" : "idle", current };
+  if (credentials) reply.credentials = credentials;
+  return reply;
 }

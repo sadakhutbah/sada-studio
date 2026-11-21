@@ -22,7 +22,7 @@ function setup(opts: { paired?: boolean; wasLive?: boolean; suppressed?: string[
   const persist = new MemoryPersist();
   if (opts.paired !== false) devices.saved = device;
   persist.data = { wasLive: opts.wasLive ?? false, suppressed: opts.suppressed ?? [] };
-  const sup = new KioskSupervisor(api, devices, persist, { version: "9.9.9", heartbeatMs: 30_000, heartbeatLiveMs: 10_000, minBeatGapMs: 2_000 });
+  const sup = new KioskSupervisor(api, devices, persist, { version: "9.9.9", heartbeatMs: 30_000, heartbeatLiveMs: 10_000, minBeatGapMs: 2_000, machineName: "PC-SALLE" });
   return { api, devices, persist, sup };
 }
 const tick = (ms: number) => vi.advanceTimersByTimeAsync(ms);
@@ -78,17 +78,47 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
-    it("désappairer oublie l'identité et arrête le battement", async () => {
+    it("désappairer prévient le serveur, oublie l'identité et arrête le battement", async () => {
       const { api, sup, devices } = setup();
       sup.boot();
       await tick(1);
-      sup.unpair();
+      await sup.unpair();
+      expect(api.unpairs).toBe(1);
       expect(devices.saved).toBeNull();
       expect(api.device).toBeNull();
       expect(sup.view.phase).toBe("unpaired");
       const n = api.beats.length;
       await tick(120_000);
       expect(api.beats).toHaveLength(n);
+    });
+
+    it("désappairer oublie l'identité même si le serveur est injoignable", async () => {
+      const { api, sup, devices } = setup();
+      api.unpairError = network();
+      sup.boot();
+      await tick(1);
+      await sup.unpair();
+      expect(devices.saved).toBeNull();
+      expect(sup.view.phase).toBe("unpaired");
+    });
+
+    it("propose le nom de la machine à la console, au premier code comme au renouvellement", async () => {
+      const { api, sup } = setup({ paired: false });
+      sup.boot();
+      await sup.startPairing("https://c.example");
+      await tick(61_000);
+      expect(api.machineNames).toEqual(["PC-SALLE", "PC-SALLE"]);
+      sup.dispose();
+    });
+
+    it("rotation : le nouveau secret est rangé et utilisé tout de suite", async () => {
+      const { api, sup, devices } = setup();
+      api.reply = { ...IDLE_REPLY, credentials: { deviceId: "d1", deviceSecret: "s2" } };
+      sup.boot();
+      await tick(1);
+      expect(devices.saved).toMatchObject({ deviceId: "d1", deviceSecret: "s2", baseUrl: "https://c.example" });
+      expect(api.device?.deviceSecret).toBe("s2");
+      sup.dispose();
     });
   });
 

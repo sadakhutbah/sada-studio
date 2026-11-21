@@ -277,8 +277,8 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
             <Title>{fr.manual.title}</Title>
             <p className="mb-3 mt-0 text-[0.85rem] text-muted">{onAir ? fr.manual.busy : fr.manual.hint}</p>
             <div className="grid gap-3.5">
-              <div role="radiogroup" aria-label={fr.live.kind} className="grid grid-cols-2 gap-1 rounded-[9px] bg-paper-2 p-1">
-                {(["khutba", "dars"] as StreamKind[]).map((k) => (
+              <div role="radiogroup" aria-label={fr.live.kind} className="grid grid-cols-3 gap-1 rounded-[9px] bg-paper-2 p-1">
+                {(["khutba", "dars", "conference"] as StreamKind[]).map((k) => (
                   <button
                     key={k}
                     type="button"

@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain, powerSaveBlocker } from "electron";
+import { hostname } from "node:os";
 import { SadaHttpApi } from "../core/api/sada-api";
 import type { StreamMeta } from "../core/api/types";
 import { ApiError } from "../core/errors";
@@ -20,7 +21,7 @@ async function run<T>(fn: () => Promise<T>): Promise<IpcResult<T>> {
 }
 
 const isMeta = (m: unknown): m is StreamMeta =>
-  !!m && typeof m === "object" && ((m as StreamMeta).type === "khutba" || (m as StreamMeta).type === "dars") && typeof (m as StreamMeta).title === "string";
+  !!m && typeof m === "object" && ((m as StreamMeta).type === "khutba" || (m as StreamMeta).type === "dars" || (m as StreamMeta).type === "conference") && typeof (m as StreamMeta).title === "string";
 
 const isReport = (r: unknown): r is ClientReport =>
   !!r && typeof r === "object" && typeof (r as ClientReport).sessionState === "string" && typeof (r as ClientReport).camera === "boolean" && Array.isArray((r as ClientReport).checks);
@@ -36,7 +37,7 @@ export interface Kiosk {
  */
 export function registerIpc(version: string): Kiosk {
   const api = new SadaHttpApi();
-  const supervisor = new KioskSupervisor(api, new SafeDeviceStore(), new FilePersistStore(), { version });
+  const supervisor = new KioskSupervisor(api, new SafeDeviceStore(), new FilePersistStore(), { version, machineName: hostname() });
   let gate: UpdateGate | null = null;
   let displayBlocker: number | null = null;
 
@@ -74,7 +75,7 @@ export function registerIpc(version: string): Kiosk {
     run(async () => (await supervisor.startPairing(String(baseUrl ?? "")), null)),
   );
   ipcMain.handle("kiosk:cancel-pairing", () => run(async () => (supervisor.cancelPairing(), null)));
-  ipcMain.handle("kiosk:unpair", () => run(async () => (supervisor.unpair(), null)));
+  ipcMain.handle("kiosk:unpair", () => run(async () => (await supervisor.unpair(), null)));
   ipcMain.handle("kiosk:start-manual", (_e, meta: unknown) =>
     run(async () => {
       if (!isMeta(meta)) throw new ApiError(0, "Type ou titre invalide.");

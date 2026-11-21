@@ -18,6 +18,7 @@ async function paired() {
   const p = await api.pairing.poll(mock.url, c.deviceCode);
   if (p.status !== "paired") throw new Error("appairage attendu");
   api.useDevice({ baseUrl: mock.url, deviceId: p.deviceId, deviceSecret: p.deviceSecret, mosque: p.mosque });
+  mock.setLive({ type: "khutba", title: "Direct" }); // le serveur ordonne le direct : sans ordre, WHIP répond 409 not_ordered
   return { api, secret: p.deviceSecret };
 }
 

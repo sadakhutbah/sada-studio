@@ -8,16 +8,22 @@ export interface MockSada {
   url: string;
   requests: MockRequest[];
   schedule: Array<Record<string, unknown>>;
-  command: "idle" | "live";
-  current: Record<string, unknown> | null;
+  manual: { type: string; title: string; startedAt: number; deviceId: string | null } | null;
+  stopped: Set<string>;
+  readonly command: "standby" | "live";
+  readonly current: Record<string, unknown> | null;
+  readonly devices: Array<{ id: string; secret: string; name: string; revoked: boolean }>;
   whipStatus: number | null;
+  otherPublisher: boolean;
+  now: () => number;
   failHeartbeats: number;
   heartbeatInterval: number;
   since: string;
   heartbeats(): Array<Record<string, any>>;
   approve(userCode?: string): void;
   revokeAll(): void;
-  setLive(current: Record<string, unknown>): void;
+  rotateAll(): void;
+  setLive(o?: { type?: string; title?: string; source?: "manual" | "schedule" }): void;
   setIdle(): void;
   close(): Promise<void>;
 }

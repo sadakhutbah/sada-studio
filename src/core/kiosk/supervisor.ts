@@ -45,6 +45,8 @@ export interface SupervisorOptions extends KioskOptions {
   /** Attente après échec de battement : croissante, bornée. */
   failureBackoff: { baseMs: number; maxMs: number };
   tickMs: number;
+  /** Nom de l'ordinateur, proposé à la console au moment de l'appairage. */
+  machineName: string;
   /** Écart minimal entre deux battements immédiats : une caméra qui clignote ne harcèle pas le serveur. */
   minBeatGapMs: number;
 }
@@ -56,6 +58,7 @@ export const DEFAULT_SUPERVISOR_OPTIONS: SupervisorOptions = {
   heartbeatLiveMs: 10_000,
   failureBackoff: { baseMs: 5_000, maxMs: 120_000 },
   tickMs: 10_000,
+  machineName: "",
   minBeatGapMs: 2_000,
 };
 
@@ -148,7 +151,7 @@ export class KioskSupervisor {
     if (this.device) throw new ApiError(0, "Cet appareil est déjà appairé.");
     const epoch = ++this.epoch;
     clearTimeout(this.pairTimer);
-    const challenge = await this.api.pairing.start(baseUrl);
+    const challenge = await this.api.pairing.start(baseUrl, this.o.machineName);
     if (epoch !== this.epoch) return;
     const at = Date.now();
     this.dispatch({ type: "PAIRING_STARTED", baseUrl, userCode: challenge.userCode, expiresAt: at + challenge.expiresInS * 1000 });
@@ -193,7 +196,7 @@ export class KioskSupervisor {
   /** Code expiré : un nouveau est demandé tout seul (personne n'a à relancer quoi que ce soit). */
   private async renew(epoch: number, baseUrl: string): Promise<void> {
     try {
-      const c = await this.api.pairing.start(baseUrl);
+      const c = await this.api.pairing.start(baseUrl, this.o.machineName);
       if (epoch !== this.epoch) return;
       const at = Date.now();
       this.dispatch({ type: "PAIRING_STARTED", baseUrl, userCode: c.userCode, expiresAt: at + c.expiresInS * 1000 });
@@ -212,9 +215,18 @@ export class KioskSupervisor {
     this.dispatch({ type: "UNPAIR" });
   }
 
-  /** « Désappairer » : l'identité est oubliée ici ; le retrait côté console se fait dans « Appareils ». */
-  unpair(): void {
+  /** « Désappairer » : le serveur est prévenu (il révoque l'appareil et coupe son flux), puis l'identité est oubliée ici.
+   *  Serveur injoignable : l'oubli local a lieu quand même ; la console peut retirer l'appareil dans « Appareils ». */
+  async unpair(): Promise<void> {
+    const wasPaired = this.device !== null;
     this.epoch++;
+    if (wasPaired) {
+      try {
+        await this.api.unpair();
+      } catch {
+        /* 401 : déjà révoqué ; réseau : retrait possible depuis la console */
+      }
+    }
     this.forgetDevice();
     this.dispatch({ type: "UNPAIR" });
     this.persistNow();
@@ -368,6 +380,7 @@ export class KioskSupervisor {
       this.failures.reset();
       this.consecutiveFailures = 0;
       this.resuming = false;
+      if (reply.credentials) this.adopt(device, reply.credentials);
       this.dispatch({ type: "HEARTBEAT_OK", reply, at: Date.now() });
       this.persistNow();
       const asked = Number(reply.config.heartbeat_interval);
@@ -386,6 +399,14 @@ export class KioskSupervisor {
       this.beating = false;
       if (this.beatAgain && this.consecutiveFailures === 0 && this.device === device && this.healthSignature() !== this.signature) this.beatSoon();
     }
+  }
+
+  /** Rotation demandée dans la console : le nouveau secret est rangé avant tout autre appel (l'ancien ne vaut qu'une heure). */
+  private adopt(old: DeviceCredentials, next: { deviceId: string; deviceSecret: string }): void {
+    const device: DeviceCredentials = { ...old, deviceId: next.deviceId || old.deviceId, deviceSecret: next.deviceSecret };
+    this.devices.save(device);
+    this.device = device;
+    this.api.useDevice(device);
   }
 
   private revoke(e: DeviceRevokedError): void {

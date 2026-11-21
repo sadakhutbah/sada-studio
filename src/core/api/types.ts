@@ -1,6 +1,6 @@
 import type { WhipSignaling } from "../transport/whip";
 
-export type StreamKind = "khutba" | "dars";
+export type StreamKind = "khutba" | "dars" | "conference";
 
 export interface MosqueInfo {
   name: string;
@@ -78,8 +78,16 @@ export interface HeartbeatReport {
   health: HealthPayload;
 }
 
+/** Nouvel identifiant d'appareil remis par le serveur après une rotation demandée dans la console. */
+export interface RotatedCredentials {
+  deviceId: string;
+  deviceSecret: string;
+}
+
 export interface HeartbeatReply {
   config: Record<string, unknown>;
+  /** Présent seulement quand la console a demandé une rotation : à ranger et à utiliser dès maintenant. */
+  credentials?: RotatedCredentials;
   schedule: Slot[];
   command: LiveOrder;
   current: CurrentLive | null;
@@ -91,13 +99,14 @@ export interface StreamMeta {
 }
 
 export interface PairingApi {
-  start(baseUrl: string): Promise<PairingChallenge>;
+  /** `machineName` : nom de l'ordinateur, proposé à la console comme nom de l'appareil. */
+  start(baseUrl: string, machineName?: string): Promise<PairingChallenge>;
   poll(baseUrl: string, deviceCode: string): Promise<PairPoll>;
 }
 
 /**
- * Surface de l'API Sada utilisée par le boîtier. Le contrat serveur (branche feat/studio-devices) est provisoire :
- * tout ajustement de forme ne touche que `SadaHttpApi`.
+ * Surface de l'API Sada utilisée par le boîtier. Le contrat serveur est `docs/studio-devices.md` du dépôt sada
+ * (source unique) : toute forme de fil n'existe que dans `SadaHttpApi`, le reste de l'application ne la voit pas.
  */
 export interface StudioApi {
   readonly pairing: PairingApi;
@@ -107,5 +116,7 @@ export interface StudioApi {
   /** Direct manuel, hors planning. 409 : un direct est déjà en cours. */
   startLive(meta: StreamMeta): Promise<void>;
   stopLive(): Promise<void>;
+  /** L'appareil quitte la mosquée de lui-même ; le serveur révoque son identité. */
+  unpair(): Promise<void>;
   readonly whip: WhipSignaling;
 }

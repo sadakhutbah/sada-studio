@@ -69,8 +69,12 @@ export class FakeApi implements StudioApi {
   pollQueue: PairPoll[] = [];
   starts = 0;
   readonly whip = { offer: async () => ({ answer: "", resource: "" }), patchIce: async () => undefined, close: async () => undefined };
+  unpairs = 0;
+  unpairError: Error | null = null;
+  machineNames: (string | undefined)[] = [];
   readonly pairing = {
-    start: async (): Promise<PairingChallenge> => {
+    start: async (_base?: string, machineName?: string): Promise<PairingChallenge> => {
+      this.machineNames.push(machineName);
       this.starts++;
       return { deviceCode: `dc${this.starts}`, userCode: `CODE-${this.starts}`, expiresInS: 60, intervalS: 2 };
     },
@@ -91,6 +95,10 @@ export class FakeApi implements StudioApi {
   async stopLive() {
     if (this.stopError) throw this.stopError;
     this.stopCalls++;
+  }
+  async unpair() {
+    this.unpairs++;
+    if (this.unpairError) throw this.unpairError;
   }
 }
 
