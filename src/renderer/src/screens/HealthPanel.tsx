@@ -9,7 +9,7 @@ const TONE: Record<Exclude<HealthStatus, "na">, string> = {
   unknown: "bg-dot-off",
 };
 
-/** « Santé du poste » : chaque problème est expliqué avec sa marche à suivre. Lecture seule. */
+/** "Workstation health": each problem is explained with its fix. Read-only. */
 export function HealthPanel({ items }: { items: HealthItem[] }) {
   const t = fr.health;
   const shown = items.filter((i) => i.status !== "na");

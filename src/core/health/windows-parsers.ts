@@ -1,6 +1,6 @@
 /**
- * Lecture des sorties de `reg query` et `powercfg` (Windows). Fonctions pures, indépendantes de la langue du système :
- * on ne s'appuie ni sur les libellés ni sur les accents, seulement sur les noms de valeurs et les nombres.
+ * Parsers for `reg query` and `powercfg` output (Windows). Pure functions, independent of the system language:
+ * they rely neither on labels nor on accents, only on value names and numbers.
  */
 
 function regValue(output: string, name: string): string | null {
@@ -14,20 +14,20 @@ const toNumber = (v: string | null): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-/** HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon : AutoAdminLogon = 1 quand la session s'ouvre sans mot de passe. */
+/** HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon : AutoAdminLogon = 1 when the session opens without a password. */
 export function parseAutoLogon(output: string): boolean | null {
   const v = regValue(output, "AutoAdminLogon");
   return v === null ? null : v.trim() === "1";
 }
 
-/** HKLM\\SOFTWARE\\Microsoft\\WindowsUpdate\\UX\\Settings : ActiveHoursStart / ActiveHoursEnd (heures entières 0–23). */
+/** HKLM\\SOFTWARE\\Microsoft\\WindowsUpdate\\UX\\Settings : ActiveHoursStart / ActiveHoursEnd (whole hours 0–23). */
 export function parseActiveHours(output: string): { start: number; end: number } | null {
   const start = toNumber(regValue(output, "ActiveHoursStart"));
   const end = toNumber(regValue(output, "ActiveHoursEnd"));
   return start === null || end === null ? null : { start, end };
 }
 
-/** `powercfg /query … STANDBYIDLE` : les deux dernières valeurs hexadécimales sont secteur puis batterie, en secondes (0 = jamais). */
+/** `powercfg /query … STANDBYIDLE`: the last two hexadecimal values are AC then battery, in seconds (0 = never). */
 export function parseSleepTimeouts(output: string): { acSeconds: number; dcSeconds: number } | null {
   const hex = [...output.matchAll(/0x[0-9a-f]+/gi)].map((m) => parseInt(m[0], 16));
   if (hex.length < 2) return null;

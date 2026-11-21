@@ -31,8 +31,8 @@ describe("KioskSupervisor", () => {
   beforeEach(() => vi.useFakeTimers({ now: Date.UTC(2026, 10, 27, 10, 0, 0) }));
   afterEach(() => vi.useRealTimers());
 
-  describe("appairage", () => {
-    it("affiche un code, attend la console, mémorise l'identité et se met à battre", async () => {
+  describe("pairing", () => {
+    it("shows a code, waits for the console, stores the identity and starts beating", async () => {
       const { api, sup, devices } = setup({ paired: false });
       sup.boot();
       expect(sup.view.phase).toBe("unpaired");
@@ -40,7 +40,7 @@ describe("KioskSupervisor", () => {
       expect(sup.view).toMatchObject({ phase: "pairing", pairing: { userCode: "CODE-1" } });
       api.pollQueue.push({ status: "paired", deviceId: "d9", deviceSecret: "s9", mosque: MOSQUE });
       await tick(2_100);
-      expect(sup.view).toMatchObject({ phase: "standby", mosque: { name: "Mosquée Alpha" } });
+      expect(sup.view).toMatchObject({ phase: "standby", mosque: { name: "Alpha Mosque" } });
       expect(devices.saved).toMatchObject({ deviceId: "d9", baseUrl: "https://c.example" });
       expect(api.device?.deviceSecret).toBe("s9");
       await tick(1);
@@ -48,7 +48,7 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
-    it("renouvelle seul le code expiré", async () => {
+    it("renews the expired code by itself", async () => {
       const { api, sup } = setup({ paired: false });
       sup.boot();
       await sup.startPairing("https://c.example");
@@ -58,7 +58,7 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
-    it("un code expiré signalé par le serveur est renouvelé sans attendre", async () => {
+    it("an expired code reported by the server is renewed without waiting", async () => {
       const { api, sup } = setup({ paired: false });
       sup.boot();
       await sup.startPairing("https://c.example");
@@ -68,7 +68,7 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
-    it("demande refusée : retour à l'écran initial avec explication", async () => {
+    it("request denied: back to the initial screen with an explanation", async () => {
       const { api, sup } = setup({ paired: false });
       sup.boot();
       await sup.startPairing("https://c.example");
@@ -78,7 +78,7 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
-    it("désappairer prévient le serveur, oublie l'identité et arrête le battement", async () => {
+    it("unpairing notifies the server, forgets the identity and stops the heartbeat", async () => {
       const { api, sup, devices } = setup();
       sup.boot();
       await tick(1);
@@ -92,7 +92,7 @@ describe("KioskSupervisor", () => {
       expect(api.beats).toHaveLength(n);
     });
 
-    it("désappairer oublie l'identité même si le serveur est injoignable", async () => {
+    it("unpairing forgets the identity even if the server is unreachable", async () => {
       const { api, sup, devices } = setup();
       api.unpairError = network();
       sup.boot();
@@ -102,7 +102,7 @@ describe("KioskSupervisor", () => {
       expect(sup.view.phase).toBe("unpaired");
     });
 
-    it("propose le nom de la machine à la console, au premier code comme au renouvellement", async () => {
+    it("suggests the machine name to the console, for the first code as for the renewal", async () => {
       const { api, sup } = setup({ paired: false });
       sup.boot();
       await sup.startPairing("https://c.example");
@@ -111,7 +111,7 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
-    it("rotation : le nouveau secret est rangé et utilisé tout de suite", async () => {
+    it("rotation: the new secret is stored and used right away", async () => {
       const { api, sup, devices } = setup();
       api.reply = { ...IDLE_REPLY, credentials: { deviceId: "d1", deviceSecret: "s2" } };
       sup.boot();
@@ -122,8 +122,8 @@ describe("KioskSupervisor", () => {
     });
   });
 
-  describe("boucle de battement (horloge simulée)", () => {
-    it("bat tout de suite au démarrage, puis toutes les 30 s en veille et 10 s pendant un direct", async () => {
+  describe("heartbeat loop (simulated clock)", () => {
+    it("beats right away at startup, then every 30 s in standby and 10 s during a live", async () => {
       const { api, sup } = setup();
       sup.boot();
       await tick(1);
@@ -142,7 +142,7 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
-    it("l'ordre live puis idle commande l'émission", async () => {
+    it("the live then idle order drives the broadcast", async () => {
       const { api, sup } = setup();
       sup.boot();
       api.reply = live;
@@ -154,7 +154,7 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
-    it("respecte l'intervalle demandé par le serveur (borné)", async () => {
+    it("honors the interval requested by the server (bounded)", async () => {
       const { api, sup } = setup();
       api.reply = { ...IDLE_REPLY, config: { heartbeat_interval: 5 } };
       sup.boot();
@@ -164,7 +164,7 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
-    it("serveur injoignable : attente croissante bornée, hors ligne affiché, l'ordre en cours est gardé", async () => {
+    it("server unreachable: bounded growing delay, offline displayed, the current order is kept", async () => {
       const { api, sup } = setup();
       api.reply = live;
       sup.boot();
@@ -175,7 +175,7 @@ describe("KioskSupervisor", () => {
       expect(sup.view).toMatchObject({ online: false, wantLive: true });
       const n = api.beats.length;
       await tick(10 * 60_000);
-      // 5 s, 10 s, 20 s, 40 s, 80 s, 120 s… : bien moins qu'un battement toutes les 10 s
+      // 5 s, 10 s, 20 s, 40 s, 80 s, 120 s…: far fewer than a heartbeat every 10 s
       expect(api.beats.length - n).toBeLessThan(12);
       expect(api.beats.length - n).toBeGreaterThan(4);
       api.beatError = null;
@@ -184,14 +184,14 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
-    it("401 au battement : appareil révoqué, retour à l'appairage, plus aucun battement", async () => {
+    it("401 on heartbeat: device revoked, back to pairing, no more heartbeats", async () => {
       const { api, sup, devices } = setup();
       sup.boot();
       await tick(1);
       api.beatError = revoked();
       await tick(30_500);
       expect(sup.view).toMatchObject({ phase: "revoked", wantLive: false, notice: { code: "revoked" } });
-      expect(sup.view.notice?.message).toMatch(/appairez-le de nouveau/);
+      expect(sup.view.notice?.message).toMatch(/pair it again/);
       expect(devices.saved).toBeNull();
       const n = api.beats.length;
       await tick(120_000);
@@ -199,41 +199,41 @@ describe("KioskSupervisor", () => {
     });
   });
 
-  describe("santé et battement immédiat", () => {
-    it("joint la santé détaillée : contrôles, network, dernière erreur, échec de démarrage", async () => {
+  describe("health and immediate heartbeat", () => {
+    it("attaches the detailed health: checks, network, last error, start failure", async () => {
       const { api, sup } = setup();
       sup.boot();
       sup.setReport({
         ...calmReport,
-        lastError: { code: "capture", message: "Caméra introuvable." },
-        startFailure: "Caméra introuvable.",
+        lastError: { code: "capture", message: "Camera not found." },
+        startFailure: "Camera not found.",
       });
       await tick(1);
       expect(api.beats[0].health).toEqual({
         checks: [
           { id: "camera", ok: true, detail: "ok" },
-          { id: "network", ok: true, detail: "Serveur Sada joignable." },
+          { id: "network", ok: true, detail: "Sada server reachable." },
         ],
-        last_error: { code: "capture", message: "Caméra introuvable." },
-        live_start_failure: { message: "Caméra introuvable." },
+        last_error: { code: "capture", message: "Camera not found." },
+        live_start_failure: { message: "Camera not found." },
       });
       sup.dispose();
     });
 
-    it("un contrôle qui change d'état déclenche un battement immédiat (sans attendre 30 s)", async () => {
+    it("a check that changes state triggers an immediate heartbeat (without waiting 30 s)", async () => {
       const { api, sup } = setup();
       sup.boot();
       sup.setReport(calmReport);
       await tick(5_000);
       const n = api.beats.length;
-      sup.setReport({ ...calmReport, camera: false, checks: [{ id: "camera", ok: false, detail: "Aucune caméra détectée." }] });
+      sup.setReport({ ...calmReport, camera: false, checks: [{ id: "camera", ok: false, detail: "No camera detected." }] });
       await tick(10);
       expect(api.beats.length).toBe(n + 1);
       expect(api.beats.at(-1)!.health.checks[0]).toMatchObject({ id: "camera", ok: false });
       sup.dispose();
     });
 
-    it("un contrôle qui clignote ne harcèle pas le serveur : écart minimal entre deux battements", async () => {
+    it("a flickering check does not hammer the server: minimum gap between two heartbeats", async () => {
       const { api, sup } = setup();
       sup.boot();
       sup.setReport(calmReport);
@@ -248,7 +248,7 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
-    it("sans changement d'état, aucun battement supplémentaire (le débit seul ne compte pas)", async () => {
+    it("without a state change, no extra heartbeat (the bitrate alone does not count)", async () => {
       const { api, sup } = setup();
       sup.boot();
       sup.setReport(calmReport);
@@ -260,20 +260,20 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
-    it("une erreur de session fait partir un battement immédiat", async () => {
+    it("a session error triggers an immediate heartbeat", async () => {
       const { api, sup } = setup();
       sup.boot();
       sup.setReport(calmReport);
       await tick(5_000);
       const n = api.beats.length;
-      sup.setReport({ ...calmReport, sessionState: "error", lastError: { code: "conflict", message: "Un direct est déjà en cours." } });
+      sup.setReport({ ...calmReport, sessionState: "error", lastError: { code: "conflict", message: "A live is already running." } });
       await tick(10);
       expect(api.beats.length).toBe(n + 1);
       expect(api.beats.at(-1)!.health.last_error?.code).toBe("conflict");
       sup.dispose();
     });
 
-    it("liaison coupée avec le relais : network passe à faux", async () => {
+    it("link with the relay down: network turns false", async () => {
       const { api, sup } = setup();
       sup.boot();
       sup.setReport({ ...calmReport, sessionState: "reconnecting" });
@@ -283,8 +283,8 @@ describe("KioskSupervisor", () => {
     });
   });
 
-  describe("direct manuel", () => {
-    it("start puis stop : appelle le serveur, le serveur reste maître", async () => {
+  describe("manual live", () => {
+    it("start then stop: calls the server, the server remains the master", async () => {
       const { api, sup } = setup();
       sup.boot();
       await tick(1);
@@ -298,17 +298,17 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
-    it("409 : affiche « déjà en cours depuis X » et n'émet pas", async () => {
+    it("409: shows \"already running since X\" and does not broadcast", async () => {
       const { api, sup } = setup();
       sup.boot();
       await tick(1);
-      api.startError = new ApiError(409, "Un direct est déjà en cours depuis 12:05.");
+      api.startError = new ApiError(409, "A live is already running since 12:05.");
       await expect(sup.startManual({ type: "khutba", title: "X" })).rejects.toMatchObject({ status: 409 });
-      expect(sup.view).toMatchObject({ wantLive: false, conflict: { message: "Un direct est déjà en cours depuis 12:05." } });
+      expect(sup.view).toMatchObject({ wantLive: false, conflict: { message: "A live is already running since 12:05." } });
       sup.dispose();
     });
 
-    it("refuse un titre vide ou un lancement pendant un direct", async () => {
+    it("refuses an empty title or a start during a live", async () => {
       const { api, sup } = setup();
       api.reply = live;
       sup.boot();
@@ -317,11 +317,11 @@ describe("KioskSupervisor", () => {
       api.reply = IDLE_REPLY;
       await sup.stopLive();
       await tick(10_500);
-      await expect(sup.startManual({ type: "khutba", title: "  " })).rejects.toThrow(/titre/);
+      await expect(sup.startManual({ type: "khutba", title: "  " })).rejects.toThrow(/title/);
       sup.dispose();
     });
 
-    it("arrêt sans réseau : coupé ici aussitôt, annoncé au serveur dès que possible", async () => {
+    it("stop without network: cut here at once, announced to the server as soon as possible", async () => {
       const { api, sup } = setup();
       api.reply = live;
       sup.boot();
@@ -336,7 +336,7 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
-    it("arrêt manuel en plein créneau : le serveur répète live, on ne relance pas", async () => {
+    it("manual stop mid-slot: the server repeats live, do not restart", async () => {
       const { api, sup } = setup();
       api.reply = live;
       sup.boot();
@@ -348,8 +348,8 @@ describe("KioskSupervisor", () => {
     });
   });
 
-  describe("reprise après redémarrage", () => {
-    it("« j'étais en direct » : en attente de l'ordre du serveur, qui reste maître", async () => {
+  describe("resume after restart", () => {
+    it("resumes after \"I was live\": waits for the server order, which remains the master", async () => {
       const { api, sup } = setup({ wasLive: true });
       sup.boot();
       expect(sup.view).toMatchObject({ resuming: true, wantLive: false });
@@ -359,7 +359,7 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
-    it("serveur idle au redémarrage : on ne relance rien", async () => {
+    it("server idle at restart: nothing is restarted", async () => {
       const { sup } = setup({ wasLive: true });
       sup.boot();
       await tick(1);
@@ -367,7 +367,7 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
-    it("l'écart d'un arrêt manuel survit au redémarrage", async () => {
+    it("the manual-stop dismissal survives a restart", async () => {
       const { api, sup } = setup({ suppressed: ["slot:s1"] });
       api.reply = { ...live, schedule: [{ id: "s1", type: "khutba", title: "Khutba", startsAt: Date.now() - 60_000, endsAt: Date.now() + 40 * 60_000 }] };
       sup.boot();
@@ -376,13 +376,13 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
-    it("rien en mémoire : écran d'appairage", () => {
+    it("nothing in memory: pairing screen", () => {
       const { sup } = setup({ paired: false });
       sup.boot();
       expect(sup.view).toMatchObject({ phase: "unpaired", persistent: true });
     });
 
-    it("l'état « en direct » est persisté seulement quand le serveur demande bien d'émettre", async () => {
+    it("the live state is persisted only when the server really asks to broadcast", async () => {
       const { api, persist, sup } = setup();
       sup.boot();
       await tick(1);

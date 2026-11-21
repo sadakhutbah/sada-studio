@@ -17,13 +17,13 @@ const report: HeartbeatReport = {
   bitrate: 2500,
   health: {
     checks: [
-      { id: "camera", ok: true, detail: "Une caméra détectée." },
-      { id: "windows_autologon", ok: false, detail: "Mot de passe demandé." },
+      { id: "camera", ok: true, detail: "One camera detected." },
+      { id: "windows_autologon", ok: false, detail: "Password required." },
       { id: "windows_update_active_hours", ok: true, detail: "" },
       { id: "sleep", ok: true, detail: "" },
       { id: "network", ok: true, detail: "" },
     ],
-    last_error: { code: "capture", message: "Caméra introuvable." },
+    last_error: { code: "capture", message: "Camera not found." },
     live_start_failure: null,
   },
 };
@@ -33,13 +33,13 @@ async function paired() {
   const c = await api.pairing.start(mock.url, "PC-SALLE");
   mock.approve();
   const p = await api.pairing.poll(mock.url, c.deviceCode);
-  if (p.status !== "paired") throw new Error("appairage attendu");
+  if (p.status !== "paired") throw new Error("pairing expected");
   api.useDevice({ baseUrl: mock.url, deviceId: p.deviceId, deviceSecret: p.deviceSecret, mosque: p.mosque });
   return api;
 }
 
-describe("appairage", () => {
-  it("propose le nom de la machine, attend (pending) puis livre l'identifiant public et le secret apart", async () => {
+describe("pairing", () => {
+  it("suggests the machine name, waits (pending), then delivers the public id and the device secret", async () => {
     const api = new SadaHttpApi();
     const c = await api.pairing.start(mock.url, "  PC-SALLE  ");
     expect(JSON.parse(mock.requests.at(-1)!.body)).toEqual({ name: "PC-SALLE" });
@@ -47,19 +47,19 @@ describe("appairage", () => {
     expect(await api.pairing.poll(mock.url, c.deviceCode)).toEqual({ status: "pending" });
     mock.approve("K7QM-4TZ2");
     const p = await api.pairing.poll(mock.url, c.deviceCode);
-    expect(p).toMatchObject({ status: "paired", mosque: { name: "Mosquée Alpha", slug: "alpha" } });
-    if (p.status !== "paired") throw new Error("appairage attendu");
+    expect(p).toMatchObject({ status: "paired", mosque: { name: "Alpha Mosque", slug: "alpha" } });
+    if (p.status !== "paired") throw new Error("pairing expected");
     expect(p.deviceId).toMatch(/^sdev_\d+$/);
     expect(p.deviceSecret).toMatch(new RegExp(`^${p.deviceId}\\.\\S+$`));
     expect(JSON.parse(mock.requests.at(-1)!.body)).toEqual({ device_code: c.deviceCode });
   });
 
-  it("sans nom de machine, le corps reste vide", async () => {
+  it("without a machine name, the body stays empty", async () => {
     await new SadaHttpApi().pairing.start(mock.url);
     expect(JSON.parse(mock.requests.at(-1)!.body)).toEqual({});
   });
 
-  it("un code expiré (410), inconnu (404) ou déjà réclamé (410) demande un nouveau code ; révoqué = refusé", async () => {
+  it("an expired (410), unknown (404) or already claimed (410) code requires a new code; revoked = refused", async () => {
     const short = await (await import("../scripts/mock-sada.mjs")).createMockSada({ codeTtlS: -1 });
     const api = new SadaHttpApi();
     const c = await api.pairing.start(short.url);
@@ -75,24 +75,24 @@ describe("appairage", () => {
     expect(await new SadaHttpApi().pairing.poll(mock.url, c2.deviceCode)).toEqual({ status: "denied" });
   });
 
-  it("l'appareil a déjà parlé : le même code ne redonne plus rien (410 claimed)", async () => {
+  it("the device has already spoken: the same code yields nothing more (410 claimed)", async () => {
     const api = new SadaHttpApi();
     const c = await api.pairing.start(mock.url);
     mock.approve();
     const p = await api.pairing.poll(mock.url, c.deviceCode);
-    if (p.status !== "paired") throw new Error("appairage attendu");
+    if (p.status !== "paired") throw new Error("pairing expected");
     api.useDevice({ baseUrl: mock.url, deviceId: p.deviceId, deviceSecret: p.deviceSecret, mosque: p.mosque });
     await api.heartbeat(report);
     expect(await api.pairing.poll(mock.url, c.deviceCode)).toEqual({ status: "expired" });
   });
 
-  it("serveur injoignable : erreur réseau (status 0)", async () => {
+  it("server unreachable: network error (status 0)", async () => {
     await expect(new SadaHttpApi().pairing.start("http://127.0.0.1:1")).rejects.toMatchObject({ status: 0 });
   });
 });
 
-describe("battement et direct manuel", () => {
-  it("envoie le corps du contrat (camera, microphone, bitrate_kbps, health à trois clés)", () => {
+describe("heartbeat and manual live", () => {
+  it("sends the contract body (camera, microphone, bitrate_kbps, health with three keys)", () => {
     expect(toWireReport(report)).toEqual({
       state: "standby",
       version: "1.2.3",
@@ -103,13 +103,13 @@ describe("battement et direct manuel", () => {
     });
     expect(toWireReport({ ...report, state: "reconnecting", health: { ...report.health, checks: [] } })).toMatchObject({ state: "live", health: {} });
     expect(toWireReport({ ...report, state: "error" }).state).toBe("error");
-    // pas encore de contrôle : ni caméra ni micro n'est affirmé absent (pas de fausse alerte au démarrage)
+    // no check yet: neither camera nor microphone is claimed absent (no false alert at startup)
     const first = toWireReport({ ...report, camera: false, micro: false, health: { ...report.health, checks: [] } });
     expect(first).not.toHaveProperty("camera");
     expect(first).not.toHaveProperty("microphone");
   });
 
-  it("lit current.slot_id, starts_at/ends_at, next et slots du contrat", async () => {
+  it("reads current.slot_id, starts_at/ends_at, next and slots from the contract", async () => {
     const api = await paired();
     const t = Date.now();
     mock.schedule = [
@@ -127,7 +127,7 @@ describe("battement et direct manuel", () => {
     expect(reply.config.heartbeat_interval).toBe(30);
   });
 
-  it("un créneau en cours porte son slot_id, une seule fois dans la liste", async () => {
+  it("a running slot carries its slot_id, only once in the list", async () => {
     const api = await paired();
     mock.setLive({ type: "khutba", title: "Jumua", source: "schedule" });
     const reply = await api.heartbeat(report);
@@ -136,7 +136,7 @@ describe("battement et direct manuel", () => {
     expect(reply.schedule.filter((s) => s.id === reply.current?.slotId)).toHaveLength(1);
   });
 
-  it("révoqué (401) : le battement lève DeviceRevokedError, comme un identifiant inconnu", async () => {
+  it("revoked (401): the heartbeat throws DeviceRevokedError, like an unknown credential", async () => {
     const api = await paired();
     mock.revokeAll();
     await expect(api.heartbeat(report)).rejects.toMatchObject({ name: "DeviceRevokedError" });
@@ -144,21 +144,21 @@ describe("battement et direct manuel", () => {
     await expect(api.heartbeat(report)).rejects.toMatchObject({ name: "DeviceRevokedError" });
   });
 
-  it("live/start, 409 avec l'heure ISO d'une autre source, puis live/stop", async () => {
+  it("live/start, 409 with the ISO time of another source, then live/stop", async () => {
     const api = await paired();
-    await api.startLive({ type: "conference", title: "Soirée" });
-    expect(JSON.parse(mock.requests.at(-1)!.body)).toEqual({ type: "conference", title: "Soirée" });
+    await api.startLive({ type: "conference", title: "Evening" });
+    expect(JSON.parse(mock.requests.at(-1)!.body)).toEqual({ type: "conference", title: "Evening" });
     expect(mock.current).toMatchObject({ source: "manual", type: "conference" });
     await api.stopLive();
     expect(mock.command).toBe("standby");
     mock.otherPublisher = true;
-    await expect(api.startLive({ type: "dars", title: "Autre" })).rejects.toMatchObject({
+    await expect(api.startLive({ type: "dars", title: "Other" })).rejects.toMatchObject({
       status: 409,
-      message: expect.stringMatching(/^Un direct est déjà en cours depuis \d\d:\d\d\.$/),
+      message: expect.stringMatching(/^A live is already running since \d\d:\d\d\.$/),
     });
   });
 
-  it("une rotation demandée par la console apporte un nouveau secret", async () => {
+  it("a rotation requested by the console brings a new secret", async () => {
     const api = await paired();
     mock.rotateAll();
     const reply = await api.heartbeat(report);
@@ -166,14 +166,14 @@ describe("battement et direct manuel", () => {
     expect(normalizeReply({ credentials: { device_id: "sdev_1" } }).credentials).toBeUndefined();
   });
 
-  it("désappairage : le serveur révoque l'appareil, qui est refusé ensuite", async () => {
+  it("unpairing: the server revokes the device, which is refused afterwards", async () => {
     const api = await paired();
     await api.unpair();
     expect(mock.requests.at(-1)).toMatchObject({ method: "POST", url: "/api/v1/studio/unpair" });
     await expect(api.heartbeat(report)).rejects.toMatchObject({ name: "DeviceRevokedError" });
   });
 
-  it("une réponse partielle ne casse pas la boucle", () => {
+  it("a partial response does not break the loop", () => {
     expect(normalizeReply({}).schedule).toEqual([]);
     expect(normalizeReply({})).toMatchObject({ command: "idle", current: null });
     expect(normalizeReply({ slots: [{ title: "sans heure" }, null] }).schedule).toEqual([]);

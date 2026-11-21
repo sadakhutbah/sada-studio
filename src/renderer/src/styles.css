@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
-/* Charte reprise telle quelle de la console Sada (sada/web/src/styles.css) :
-   papier, encre verte, feuille dorée, rouge direct. EB Garamond + Source Sans 3. */
+/* Design tokens taken as is from the Sada console (sada/web/src/styles.css):
+   paper, green ink, gold leaf, live red. EB Garamond + Source Sans 3. */
 @theme {
   --color-paper: #f7f3ea;
   --color-paper-2: #efe8d8;
@@ -54,7 +54,7 @@
   }
 }
 
-/* Liste déroulante dessinée par nous, comme dans la console. */
+/* Custom-drawn dropdown list, as in the console. */
 @utility select-chevron {
   appearance: none;
   padding-block: 0;

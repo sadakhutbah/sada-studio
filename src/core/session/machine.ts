@@ -1,28 +1,28 @@
 import type { ErrorCode } from "../errors";
 
 /**
- * Machine d'état de la session de diffusion. Fonction pure : (état, évènement) → état.
- * Aucun effet de bord ici ; c'est `BroadcastSession` qui pilote la capture et le transport.
+ * State machine of the broadcast session. Pure function: (state, event) → state.
+ * No side effects here; `BroadcastSession` drives the capture and the transport.
  *
  *   idle ──START──▶ connecting ──CONNECTED──▶ live ◀──CONNECTED── reconnecting
  *                      │                       │  ──CONNECTION_LOST──▶  │ ▲
  *                      │                       │                        │ └ RETRY_FAILED (attempt+1)
- *   STOP depuis connecting / live / reconnecting ──▶ stopping ──STOPPED──▶ idle
- *   FATAL (ou trop d'échecs) ──▶ error ──RESET | START──▶ idle | connecting
+ *   STOP from connecting / live / reconnecting ──▶ stopping ──STOPPED──▶ idle
+ *   FATAL (or too many failures) ──▶ error ──RESET | START──▶ idle | connecting
  *
- * Le pilotage par le serveur (appairage, veille, armement, ordre live/idle, direct manuel) vit dans
- * `core/kiosk/machine.ts` : cette machine-ci ne connaît que la liaison avec le relais.
+ * Server-driven control (pairing, standby, arming, live/idle order, manual live) lives in
+ * `core/kiosk/machine.ts`: this machine only knows about the link with the relay.
  */
 export type SessionStatus = "idle" | "connecting" | "live" | "reconnecting" | "error" | "stopping";
 
 export interface SessionState {
   readonly status: SessionStatus;
-  /** Tentatives de reconnexion consécutives (0 hors reconnexion). */
+  /** Consecutive reconnection attempts (0 when not reconnecting). */
   readonly attempt: number;
   readonly error: string | null;
-  /** `conflict` : un autre direct occupe la mosquée (à réessayer plus tard, sans insister). */
+  /** `conflict`: another live occupies the mosque (retry later, without insisting). */
   readonly errorCode: ErrorCode | null;
-  /** Début du direct (ms, horloge de l'appelant) ; conservé pendant une reconnexion. */
+  /** Start of the live (ms, caller's clock); kept during a reconnection. */
   readonly startedAt: number | null;
 }
 
@@ -37,7 +37,7 @@ export type SessionEvent =
   | { type: "RESET" };
 
 export interface MachineOptions {
-  /** Échecs de reconnexion tolérés avant de passer en erreur. */
+  /** Reconnection failures tolerated before switching to error. */
   maxAttempts: number;
 }
 
@@ -52,7 +52,7 @@ const state = (status: SessionStatus, over: Partial<SessionState> = {}): Session
   ...over,
 });
 
-/** Évènement non permis dans l'état courant : l'état est rendu tel quel (même référence). */
+/** Event not allowed in the current state: the state is returned as is (same reference). */
 export function transition(s: SessionState, e: SessionEvent, opts: MachineOptions): SessionState {
   switch (s.status) {
     case "idle":
@@ -89,7 +89,7 @@ export function transition(s: SessionState, e: SessionEvent, opts: MachineOption
 export const isActive = (s: SessionState) => s.status === "connecting" || s.status === "live" || s.status === "reconnecting";
 export const canStart = (s: SessionState) => s.status === "idle" || s.status === "error";
 
-/** Conteneur d'état observable autour de `transition`. */
+/** Observable state container around `transition`. */
 export class SessionMachine {
   private current = INITIAL_STATE;
   private readonly listeners = new Set<(s: SessionState) => void>();

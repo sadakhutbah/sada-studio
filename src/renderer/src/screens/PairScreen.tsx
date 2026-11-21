@@ -6,7 +6,7 @@ import { loadPrefs, savePrefs } from "../prefs";
 import { fill, fr } from "../strings";
 import { Brand, Btn, ErrorBox, Field, inputClass } from "../ui";
 
-/** Premier lancement (ou appareil retiré) : l'adresse de l'instance, puis un grand code à saisir dans la console. */
+/** First launch (or device removed): the instance address, then a large code to type in the console. */
 export function PairScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   const t = fr.pair;
   const pairing = kiosk.phase === "pairing" ? kiosk.pairing : null;

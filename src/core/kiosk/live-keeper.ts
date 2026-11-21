@@ -1,7 +1,7 @@
 import { canStart, isActive, type SessionState } from "../session/machine";
 import { Backoff, type BackoffOptions } from "./backoff";
 
-/** Ce dont le gardien a besoin de la session d'émission (BroadcastSession y répond telle quelle). */
+/** What the keeper needs from the broadcast session (BroadcastSession satisfies it as is). */
 export interface KeeperSession {
   readonly snapshot: { state: SessionState };
   subscribe(fn: (s: { state: SessionState }) => void): () => void;
@@ -10,9 +10,9 @@ export interface KeeperSession {
 }
 
 export interface KeeperOptions {
-  /** Après un échec (caméra, liaison) : attente croissante bornée. */
+  /** After a failure (camera, link): bounded growing delay. */
   retry: BackoffOptions;
-  /** Après un refus « déjà en direct » (409) : bien plus patient, jamais agressif. */
+  /** After an "already live" refusal (409): much more patient, never aggressive. */
   conflictRetry: BackoffOptions;
 }
 
@@ -22,9 +22,9 @@ export const DEFAULT_KEEPER_OPTIONS: KeeperOptions = {
 };
 
 /**
- * Fait coller la session à l'ordre du serveur : démarre quand on doit émettre, arrête sinon,
- * et réessaie après une erreur (caméra absente, serveur injoignable, direct déjà en cours) en s'espaçant.
- * Il ne relance jamais ce que l'ordre ne demande plus ; la décision d'émettre vient de `KioskState.wantLive`.
+ * Keeps the session in line with the server order: starts when we must broadcast, stops otherwise,
+ * and retries after an error (camera missing, server unreachable, live already running) with growing delays.
+ * It never restarts what the order no longer asks for; the decision to broadcast comes from `KioskState.wantLive`.
  */
 export class LiveKeeper {
   private wanted = false;
@@ -43,7 +43,7 @@ export class LiveKeeper {
     this.off = session.subscribe(() => this.evaluate());
   }
 
-  /** Prochaine nouvelle tentative annoncée (pour l'affichage), ou null. */
+  /** Next announced retry (for display), or null. */
   onRetry(fn: (n: { waitMs: number; at: number } | null) => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);

@@ -1,19 +1,20 @@
 import { ApiError, DeviceRevokedError } from "../errors";
 import { normalizeBaseUrl } from "../api/sada-api";
 import type { DeviceCredentials, HealthCheck, HealthPayload, HeartbeatReport, StreamMeta, StudioApi } from "../api/types";
+import { t } from "../messages";
 import { Backoff } from "./backoff";
 import { DEFAULT_KIOSK_OPTIONS, INITIAL_KIOSK, kioskTransition, pairedState, type KioskEvent, type KioskOptions, type KioskState } from "./machine";
 
-/** Où l'identité de l'appareil est rangée (coffre du système en production). */
+/** Where the device identity is stored (system vault in production). */
 export interface DeviceStore {
   load(): DeviceCredentials | null;
   save(device: DeviceCredentials): void;
   clear(): void;
-  /** Le secret survit à un redémarrage (coffre disponible). */
+  /** The secret survives a restart (vault available). */
   readonly persistent: boolean;
 }
 
-/** Petit état à conserver entre deux lancements : « j'étais en direct », directs écartés. */
+/** Small state to keep between two launches: "I was live", dismissed lives. */
 export interface Persisted {
   wasLive: boolean;
   suppressed: string[];
@@ -24,13 +25,13 @@ export interface PersistStore {
   save(p: Persisted): void;
 }
 
-/** Ce que l'interface rapporte : l'état de la session d'émission et du matériel. */
+/** What the UI reports: the state of the broadcast session and of the hardware. */
 export interface ClientReport {
   sessionState: string;
   camera: boolean;
   micro: boolean;
   bitrateKbps: number;
-  /** Contrôles du poste (caméra, micro, réglages Windows…), sans « network » que le superviseur ajoute lui-même. */
+  /** Workstation checks (camera, microphone, Windows settings…), without "network", which the supervisor adds itself. */
   checks: HealthCheck[];
   lastError: { code: string; message: string } | null;
   startFailure: string | null;
@@ -38,16 +39,16 @@ export interface ClientReport {
 
 export interface SupervisorOptions extends KioskOptions {
   version: string;
-  /** Cadence de battement par défaut (le serveur peut la fixer via config.heartbeat_interval, en secondes). */
+  /** Default heartbeat interval (the server may set it via config.heartbeat_interval, in seconds). */
   heartbeatMs: number;
-  /** Cadence plus serrée pendant un direct ou l'armement. */
+  /** Tighter interval during a live or while arming. */
   heartbeatLiveMs: number;
-  /** Attente après échec de battement : croissante, bornée. */
+  /** Delay after a failed heartbeat: growing, bounded. */
   failureBackoff: { baseMs: number; maxMs: number };
   tickMs: number;
-  /** Nom de l'ordinateur, proposé à la console au moment de l'appairage. */
+  /** Computer name, suggested to the console at pairing time. */
   machineName: string;
-  /** Écart minimal entre deux battements immédiats : une caméra qui clignote ne harcèle pas le serveur. */
+  /** Minimum gap between two immediate heartbeats: a flickering camera does not hammer the server. */
   minBeatGapMs: number;
 }
 
@@ -64,23 +65,23 @@ export const DEFAULT_SUPERVISOR_OPTIONS: SupervisorOptions = {
 
 export type KioskView = KioskState & {
   version: string;
-  /** Redémarrage après un direct : on attend l'ordre du serveur, qui reste maître. */
+  /** Restart after a live: we wait for the server order, the server remains the master. */
   resuming: boolean;
-  /** Le secret de l'appareil est gardé de façon durable. */
+  /** The device secret is stored durably. */
   persistent: boolean;
-  /** Un arrêt n'a pas encore pu être annoncé au serveur. */
+  /** A stop could not be announced to the server yet. */
   stopPending: boolean;
-  /** État de la session d'émission rapporté par l'interface (idle, live, reconnecting…). */
+  /** Broadcast session state reported by the UI (idle, live, reconnecting…). */
   reportedState: string;
 };
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
 /**
- * Chef d'orchestre du boîtier (processus principal, sans dépendance à Electron) :
- * appairage par code, boucle de battement, direct manuel, reprise. L'état vit dans `kioskTransition` ;
- * ici seulement les effets (réseau, minuteries, rangement).
- * Le serveur reste maître : l'application n'émet que lorsque l'état dit `wantLive`.
+ * Orchestrator of the device (main process, no Electron dependency):
+ * pairing by code, heartbeat loop, manual live, resume. The state lives in `kioskTransition`;
+ * only the effects live here (network, timers, storage).
+ * The server remains the master: the application broadcasts only when the state says `wantLive`.
  */
 export class KioskSupervisor {
   private state: KioskState = INITIAL_KIOSK;
@@ -98,7 +99,7 @@ export class KioskSupervisor {
   private hbTimer: ReturnType<typeof setTimeout> | undefined;
   private tickTimer: ReturnType<typeof setInterval> | undefined;
   private pairTimer: ReturnType<typeof setTimeout> | undefined;
-  /** Incrémenté à chaque changement d'appairage : une réponse tardive d'un appairage révolu est ignorée. */
+  /** Incremented on each pairing change: a late response from a past pairing is ignored. */
   private epoch = 0;
   private readonly o: SupervisorOptions;
 
@@ -121,7 +122,7 @@ export class KioskSupervisor {
     return () => this.listeners.delete(fn);
   }
 
-  /** Démarrage : reprend l'appairage mémorisé, s'il y en a un. Le battement dit aussitôt ce qu'il faut faire. */
+  /** Startup: resumes the stored pairing, if any. The heartbeat immediately says what to do. */
   boot(): void {
     const saved = this.persist.load();
     const device = this.devices.load();
@@ -146,9 +147,9 @@ export class KioskSupervisor {
 
   // ───── Appairage ─────
 
-  /** Demande un code ; l'écran l'affiche, la console le valide. Le code est renouvelé tant que personne ne le saisit. */
+  /** Requests a code; the screen shows it, the console validates it. The code is renewed until someone enters it. */
   async startPairing(baseUrl: string): Promise<void> {
-    if (this.device) throw new ApiError(0, "Cet appareil est déjà appairé.");
+    if (this.device) throw new ApiError(0, t("sup.alreadyPaired"));
     const epoch = ++this.epoch;
     clearTimeout(this.pairTimer);
     const challenge = await this.api.pairing.start(baseUrl, this.o.machineName);
@@ -179,12 +180,12 @@ export class KioskSupervisor {
       }
       if (r.status === "expired") return this.renew(epoch, baseUrl);
       if (r.status === "denied") {
-        this.dispatch({ type: "PAIRING_FAILED", code: "pair-denied", message: "La demande a été refusée dans la console Sada. Relancez l'appairage pour obtenir un nouveau code." });
+        this.dispatch({ type: "PAIRING_FAILED", code: "pair-denied", message: t("sup.pairDenied") });
         return;
       }
     } catch (e) {
       if (epoch !== this.epoch) return;
-      // Réseau coupé pendant l'attente : on continue d'attendre, sans quitter l'écran du code.
+      // Network down while waiting: keep waiting, without leaving the code screen.
       if (e instanceof ApiError && e.status !== 0 && e.status >= 400 && e.status < 500 && e.status !== 408) {
         this.dispatch({ type: "PAIRING_FAILED", code: "pair-failed", message: e.message });
         return;
@@ -193,7 +194,7 @@ export class KioskSupervisor {
     this.schedulePoll(epoch, baseUrl, deviceCode, everyMs, expiresAt);
   }
 
-  /** Code expiré : un nouveau est demandé tout seul (personne n'a à relancer quoi que ce soit). */
+  /** Code expired: a new one is requested automatically (nobody has to restart anything). */
   private async renew(epoch: number, baseUrl: string): Promise<void> {
     try {
       const c = await this.api.pairing.start(baseUrl, this.o.machineName);
@@ -203,7 +204,7 @@ export class KioskSupervisor {
       this.schedulePoll(epoch, baseUrl, c.deviceCode, c.intervalS * 1000, at + c.expiresInS * 1000);
     } catch {
       if (epoch !== this.epoch) return;
-      // Serveur injoignable : on réessaie dans quelques secondes ; le code affiché est déjà périmé.
+      // Server unreachable: retry in a few seconds; the displayed code is already stale.
       this.pairTimer = setTimeout(() => void this.renew(epoch, baseUrl), 5_000);
     }
   }
@@ -215,8 +216,8 @@ export class KioskSupervisor {
     this.dispatch({ type: "UNPAIR" });
   }
 
-  /** « Désappairer » : le serveur est prévenu (il révoque l'appareil et coupe son flux), puis l'identité est oubliée ici.
-   *  Serveur injoignable : l'oubli local a lieu quand même ; la console peut retirer l'appareil dans « Appareils ». */
+  /** "Unpair": the server is notified (it revokes the device and cuts its stream), then the identity is forgotten here.
+   *  Server unreachable: the local forgetting happens anyway; the console can remove the device under "Devices". */
   async unpair(): Promise<void> {
     const wasPaired = this.device !== null;
     this.epoch++;
@@ -224,7 +225,7 @@ export class KioskSupervisor {
       try {
         await this.api.unpair();
       } catch {
-        /* 401 : déjà révoqué ; réseau : retrait possible depuis la console */
+        /* 401: already revoked; network: can be removed from the console */
       }
     }
     this.forgetDevice();
@@ -244,10 +245,10 @@ export class KioskSupervisor {
   // ───── Direct manuel ─────
 
   async startManual(meta: StreamMeta): Promise<void> {
-    if (!this.device) throw new ApiError(0, "Cet appareil n'est pas appairé.");
-    if (this.state.wantLive) throw new ApiError(409, "Un direct est déjà en cours.");
+    if (!this.device) throw new ApiError(0, t("sup.notPaired"));
+    if (this.state.wantLive) throw new ApiError(409, t("api.liveActive"));
     const title = meta.title.trim();
-    if (!title) throw new ApiError(0, "Saisissez un titre pour le direct.");
+    if (!title) throw new ApiError(0, t("sup.titleRequired"));
     try {
       await this.api.startLive({ type: meta.type, title });
     } catch (e) {
@@ -260,7 +261,7 @@ export class KioskSupervisor {
     this.rearm(0);
   }
 
-  /** Arrêt (manuel ou d'un direct planifié) : coupe ici d'abord, puis le dit au serveur ; l'annonce est reprise tant qu'elle échoue. */
+  /** Stop (manual or of a scheduled live): cut here first, then tell the server; the announcement is retried while it fails. */
   async stopLive(): Promise<void> {
     this.dispatch({ type: "STOP_REQUESTED", at: Date.now() });
     this.persistNow();
@@ -276,7 +277,7 @@ export class KioskSupervisor {
       this.stopPending = false;
     } catch (e) {
       if (e instanceof DeviceRevokedError) return this.revoke(e);
-      // 409/404 : plus rien à arrêter côté serveur ; tout autre échec sera repris au prochain battement.
+      // 409/404: nothing left to stop on the server; any other failure is retried on the next heartbeat.
       if (e instanceof ApiError && (e.status === 404 || e.status === 409)) this.stopPending = false;
     }
     this.emit();
@@ -286,7 +287,7 @@ export class KioskSupervisor {
     this.dispatch({ type: "DISMISS_CONFLICT" });
   }
 
-  // ───── Rapports de l'interface ─────
+  // ───── Reports from the UI ─────
 
   setReport(r: ClientReport): void {
     const was = this.report.sessionState;
@@ -295,7 +296,7 @@ export class KioskSupervisor {
       this.persistNow();
       this.emit();
     }
-    // Un contrôle change d'état (caméra débranchée, erreur de session…) : le serveur l'apprend sans attendre le rythme normal.
+    // A check changes state (camera unplugged, session error…): the server learns of it without waiting for the normal cadence.
     const sig = this.healthSignature();
     if (sig !== this.signature) {
       const first = this.signature === "";
@@ -310,7 +311,7 @@ export class KioskSupervisor {
     return `${ok}|${this.networkCheck().ok ? 1 : 0}|${r.lastError?.code ?? ""}|${r.startFailure ? 1 : 0}`;
   }
 
-  /** Battement immédiat, en respectant l'écart minimal ; si un battement est en route, un autre suivra. */
+  /** Immediate heartbeat, honoring the minimum gap; if one is in flight, another will follow. */
   private beatSoon(): void {
     if (this.beating) {
       this.beatAgain = true;
@@ -319,13 +320,13 @@ export class KioskSupervisor {
     this.rearm(Math.max(0, this.lastBeatAt + this.o.minBeatGapMs - Date.now()));
   }
 
-  /** « network » : le serveur répond, et la liaison d'émission n'est pas en train de se rétablir. */
+  /** "network": the server answers, and the broadcast link is not in the middle of recovering. */
   private networkCheck(): HealthCheck {
-    if (this.report.sessionState === "reconnecting") return { id: "network", ok: false, detail: "La liaison avec le relais est coupée : reconnexion en cours." };
+    if (this.report.sessionState === "reconnecting") return { id: "network", ok: false, detail: t("sup.relayLost") };
     if (this.consecutiveFailures >= 3) {
-      return { id: "network", ok: false, detail: `Le serveur Sada n'a pas répondu à ${this.consecutiveFailures} battements de suite.` };
+      return { id: "network", ok: false, detail: t("sup.heartbeatsMissed", { n: this.consecutiveFailures }) };
     }
-    return { id: "network", ok: true, detail: "Serveur Sada joignable." };
+    return { id: "network", ok: true, detail: t("sup.serverReachable") };
   }
 
   private healthPayload(): HealthPayload {
@@ -393,7 +394,7 @@ export class KioskSupervisor {
       this.consecutiveFailures++;
       if (e instanceof DeviceRevokedError) return this.revoke(e);
       this.dispatch({ type: "HEARTBEAT_FAILED" });
-      // Pas de réseau : on garde l'ordre en cours (un direct ne s'arrête pas faute de battement) et on réessaie en s'espaçant.
+      // No network: keep the current order (a live does not stop for lack of heartbeat) and retry with growing delays.
       this.rearm(this.failures.next());
     } finally {
       this.beating = false;
@@ -401,7 +402,7 @@ export class KioskSupervisor {
     }
   }
 
-  /** Rotation demandée dans la console : le nouveau secret est rangé avant tout autre appel (l'ancien ne vaut qu'une heure). */
+  /** Rotation requested in the console: the new secret is stored before any other call (the old one is valid for one hour only). */
   private adopt(old: DeviceCredentials, next: { deviceId: string; deviceSecret: string }): void {
     const device: DeviceCredentials = { ...old, deviceId: next.deviceId || old.deviceId, deviceSecret: next.deviceSecret };
     this.devices.save(device);
@@ -414,12 +415,12 @@ export class KioskSupervisor {
     this.forgetDevice();
     this.dispatch({
       type: "REVOKED",
-      message: `${e.message} Cet appareil n'est plus autorisé : appairez-le de nouveau depuis la console Sada, rubrique Appareils.`,
+      message: t("sup.noLongerAuthorized", { message: e.message }),
     });
     this.persistNow();
   }
 
-  // ───── Mécanique ─────
+  // ───── Internals ─────
 
   private dispatch(e: KioskEvent): void {
     const next = kioskTransition(this.state, e, this.o);

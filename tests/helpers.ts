@@ -3,11 +3,11 @@ import { ApiError, DeviceRevokedError } from "../src/core/errors";
 import type { DeviceStore, PersistStore, Persisted } from "../src/core/kiosk/supervisor";
 import { createMockSada, type MockSada } from "../scripts/mock-sada.mjs";
 
-/** Faux serveur Sada : le même moteur que `npm run mock` (scripts/mock-sada.mjs). */
+/** Fake Sada server: the same engine as `npm run mock` (scripts/mock-sada.mjs). */
 export const startMockSada = (): Promise<MockSada> => createMockSada();
 export type { MockSada };
 
-/** Faux RTCPeerConnection : suffisant pour dérouler une négociation WHIP. */
+/** Fake RTCPeerConnection: enough to run a WHIP negotiation. */
 export class FakePeer extends EventTarget {
   connectionState: RTCPeerConnectionState = "new";
   iceGatheringState: RTCIceGatheringState = "complete";
@@ -17,7 +17,7 @@ export class FakePeer extends EventTarget {
   onicecandidate: ((e: unknown) => void) | null = null;
   onconnectionstatechange: (() => void) | null = null;
   bytes = 0;
-  /** Faux comportement : « connected » juste après la réponse. */
+  /** Fake behavior: "connected" right after the answer. */
   autoConnect = true;
 
   addTransceiver() {}
@@ -52,11 +52,11 @@ export class FakePeer extends EventTarget {
 
 export const fakeStream = () => ({ getTracks: () => [{ kind: "video" }, { kind: "audio" }] }) as unknown as MediaStream;
 
-export const MOSQUE = { id: 1, slug: "alpha", name: "Mosquée Alpha" };
+export const MOSQUE = { id: 1, slug: "alpha", name: "Alpha Mosque" };
 
 export const IDLE_REPLY: HeartbeatReply = { config: {}, schedule: [], command: "idle", current: null };
 
-/** API en mémoire : réponses scriptées, appels enregistrés. Pour les tests de superviseur sans réseau. */
+/** In-memory API: scripted responses, recorded calls. For supervisor tests without a network. */
 export class FakeApi implements StudioApi {
   reply: HeartbeatReply = IDLE_REPLY;
   beats: HeartbeatReport[] = [];
@@ -103,7 +103,7 @@ export class FakeApi implements StudioApi {
 }
 
 export const revoked = () => new DeviceRevokedError();
-export const network = () => new ApiError(0, "Serveur Sada injoignable.");
+export const network = () => new ApiError(0, "Sada server unreachable.");
 
 export class MemoryDevices implements DeviceStore {
   saved: DeviceCredentials | null = null;

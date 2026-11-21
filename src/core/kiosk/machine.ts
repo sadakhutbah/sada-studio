@@ -2,19 +2,19 @@ import type { CurrentLive, HeartbeatReply, LiveOrder, MosqueInfo, Slot, StreamKi
 import { currentKey, nextSlot, runningSlot, slotKey } from "./schedule";
 
 /**
- * Machine d'état du boîtier : fonction pure (état, évènement) → état. Elle étend la machine de session
- * (core/session/machine.ts), qui ne connaît que la liaison avec le relais.
+ * State machine of the device: pure function (state, event) → state. It extends the session machine
+ * (core/session/machine.ts), which only knows about the link with the relay.
  *
  *   unpaired ──PAIRING_STARTED──▶ pairing ──PAIRED──▶ standby ◀──▶ armed ◀──▶ onair
- *      ▲  ▲                          │ ▲ renouvellement du code        (veille / armement / ordre live)
+ *      ▲  ▲                          │ ▲ code renewal                   (standby / arming / live order)
  *      │  └── UNPAIR ────────────────┘ └─ PAIRING_STARTED
  *      └──── REVOKED ──▶ revoked ──PAIRING_STARTED──▶ pairing
  *
- * Règles de pilotage (le serveur est maître) :
- *  - « onair » = on doit émettre : ordre `live` du serveur, ou direct manuel lancé ici.
- *  - un créneau planifié ne coupe jamais un direct manuel en cours ;
- *  - un arrêt manuel écarte le direct courant : l'application ne le relance pas avant le créneau suivant ;
- *  - « armed » : un créneau commence dans la marge d'armement (la caméra est préparée, rien n'est envoyé).
+ * Control rules (the server is the master):
+ *  - "onair" = we must broadcast: `live` order from the server, or a manual live started here.
+ *  - a scheduled slot never cuts a running manual live;
+ *  - a manual stop dismisses the current live: the application does not restart it before the next slot;
+ *  - "armed": a slot starts within the arming margin (the camera is prepared, nothing is sent).
  */
 export type KioskPhase = "unpaired" | "pairing" | "standby" | "armed" | "onair" | "revoked";
 
@@ -33,11 +33,11 @@ export interface Notice {
 
 export interface KioskState {
   phase: KioskPhase;
-  /** Dernière adresse d'instance saisie, pour préremplir l'écran d'appairage. */
+  /** Last typed instance address, to prefill the pairing screen. */
   baseUrl: string;
   pairing: { userCode: string; expiresAt: number } | null;
   mosque: MosqueInfo | null;
-  /** Dernier battement réussi ; faux après un échec. */
+  /** Last heartbeat succeeded; false after a failure. */
   online: boolean;
   lastSeenAt: number | null;
   command: LiveOrder;
@@ -45,13 +45,13 @@ export interface KioskState {
   schedule: Slot[];
   nextSlot: Slot | null;
   manual: ManualLive | null;
-  /** Directs écartés par un arrêt manuel (clés) : jamais relancés tant qu'ils sont les mêmes. */
+  /** Lives dismissed by a manual stop (keys): never restarted as long as they stay the same. */
   suppressed: string[];
   conflict: { message: string; at: number } | null;
   notice: Notice | null;
-  /** Il faut émettre maintenant. */
+  /** We must broadcast now. */
   wantLive: boolean;
-  /** Direct effectivement visé (manuel d'abord), pour l'affichage. */
+  /** Live actually targeted (manual first), for display. */
   live: CurrentLive | null;
 }
 
@@ -70,11 +70,11 @@ export type KioskEvent =
   | { type: "DISMISS_CONFLICT" };
 
 export interface KioskOptions {
-  /** Avant un créneau, on passe en « armed » à partir de cette marge. */
+  /** Before a slot, the state becomes "armed" from this margin. */
   armMarginMs: number;
-  /** Après un départ manuel, un ordre `idle` plus ancien que cela n'est pas pris pour une fin. */
+  /** After a manual start, an `idle` order older than this is not taken for an end. */
   manualGraceMs: number;
-  /** Un conflit affiché disparaît de lui-même après cela, quand le serveur est calme. */
+  /** A displayed conflict disappears on its own after this delay, when the server is quiet. */
   conflictTtlMs: number;
 }
 
@@ -99,14 +99,14 @@ export const INITIAL_KIOSK: KioskState = {
   live: null,
 };
 
-/** Restaure un boîtier déjà appairé (démarrage). `suppressed` vient de l'état persisté. */
+/** Restores an already paired device (startup). `suppressed` comes from the persisted state. */
 export function pairedState(mosque: MosqueInfo, baseUrl: string, suppressed: string[] = []): KioskState {
   return { ...INITIAL_KIOSK, phase: "standby", baseUrl, mosque, suppressed };
 }
 
 const isPaired = (s: KioskState) => s.phase === "standby" || s.phase === "armed" || s.phase === "onair";
 
-/** Recalcule les champs dérivés (prochain créneau, phase, ordre d'émettre) à l'instant `at`. */
+/** Recomputes the derived fields (next slot, phase, broadcast order) at instant `at`. */
 function derive(s: KioskState, at: number, o: KioskOptions): KioskState {
   if (!isPaired(s)) return s;
   const next = nextSlot(s.schedule, at, s.suppressed);
@@ -143,10 +143,10 @@ export function kioskTransition(s: KioskState, e: KioskEvent, o: KioskOptions = 
     case "HEARTBEAT_OK": {
       if (!isPaired(s)) return s;
       const { reply, at } = e;
-      // Le serveur a mis fin au direct manuel (après un délai de grâce, pour absorber la latence du départ).
+      // The server ended the manual live (after a grace delay, to absorb the start latency).
       let manual = s.manual;
       if (manual && reply.command === "idle" && at - manual.startedAt > o.manualGraceMs) manual = null;
-      // L'arrêt manuel s'oublie quand le direct écarté n'est plus ni en cours ni au planning.
+      // The manual stop is forgotten once the dismissed live is neither running nor scheduled.
       let suppressed = s.suppressed;
       if (suppressed.length) {
         const live = reply.current ? currentKey(reply.current) : null;
@@ -172,7 +172,7 @@ export function kioskTransition(s: KioskState, e: KioskEvent, o: KioskOptions = 
       return isPaired(s) ? { ...s, conflict: { message: e.message, at: e.at } } : s;
     case "STOP_REQUESTED": {
       if (!isPaired(s)) return s;
-      // Ce que l'on arrête n'est pas relancé : ni le créneau en cours, ni le direct manuel.
+      // What we stop is not restarted: neither the running slot nor the manual live.
       const keys = new Set(s.suppressed);
       if (s.manual) keys.add(`manual|${s.manual.kind}|${s.manual.title}`);
       if (s.current && s.command === "live") keys.add(currentKey(s.current));

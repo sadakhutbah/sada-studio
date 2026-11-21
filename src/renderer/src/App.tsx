@@ -2,7 +2,7 @@ import { useKiosk } from "./hooks";
 import { PairScreen } from "./screens/PairScreen";
 import { StudioScreen } from "./screens/StudioScreen";
 
-/** Pas d'identifiant ni de mot de passe : soit l'appareil est appairé et il travaille, soit il demande à l'être. */
+/** No login or password: either the device is paired and working, or it asks to be paired. */
 export function App() {
   const kiosk = useKiosk();
   if (!kiosk) return <div className="min-h-screen" aria-busy="true" />;
