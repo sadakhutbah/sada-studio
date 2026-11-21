@@ -35,7 +35,7 @@ export class CameraSource implements MediaSourceStrategy {
         },
       });
     } catch (e) {
-      throw new FatalError(describeMediaError(e));
+      throw new FatalError(describeMediaError(e), "capture");
     }
     for (const t of stream.getTracks()) t.addEventListener("ended", () => this.endedListeners.forEach((cb) => cb()));
     this.stream = stream;

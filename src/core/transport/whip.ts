@@ -164,8 +164,8 @@ export class WhipTransport implements Transport {
 /** Les erreurs de signalisation qui ne se règlent pas en réessayant. */
 export function classifySignalingError(e: unknown): Error {
   if (e instanceof ApiError) {
-    if (e.status === 401 || e.status === 403) return new FatalError("Session Sada expirée ou droits insuffisants pour piloter le direct.");
-    if (e.status === 409) return new FatalError("L'entrée du direct de cette mosquée n'est pas en mode « push ».");
+    if (e.status === 401 || e.status === 403) return new FatalError("Cet appareil n'est plus autorisé à diffuser.");
+    if (e.status === 409) return new FatalError(e.message, "conflict");
   }
   return e instanceof Error ? e : new Error(String(e));
 }

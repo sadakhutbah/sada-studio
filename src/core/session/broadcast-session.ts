@@ -83,7 +83,7 @@ export class BroadcastSession {
     } catch (e) {
       if (gen !== this.generation) return;
       await this.teardown();
-      this.machine.send({ type: "FATAL", reason: messageOf(e) });
+      this.machine.send({ type: "FATAL", reason: messageOf(e), code: e instanceof FatalError ? e.code : undefined });
     }
   }
 
@@ -132,7 +132,7 @@ export class BroadcastSession {
       if (gen !== this.generation) return;
       if (e instanceof FatalError) {
         await this.teardown();
-        this.machine.send({ type: "FATAL", reason: e.message });
+        this.machine.send({ type: "FATAL", reason: e.message, code: e.code });
         return;
       }
       this.machine.send({ type: "RETRY_FAILED", reason: messageOf(e) });

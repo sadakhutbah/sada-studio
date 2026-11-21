@@ -1,3 +1,5 @@
+import type { ErrorCode } from "../errors";
+
 /**
  * Machine d'état de la session de diffusion. Fonction pure : (état, évènement) → état.
  * Aucun effet de bord ici ; c'est `BroadcastSession` qui pilote la capture et le transport.
@@ -7,6 +9,9 @@
  *                      │                       │                        │ └ RETRY_FAILED (attempt+1)
  *   STOP depuis connecting / live / reconnecting ──▶ stopping ──STOPPED──▶ idle
  *   FATAL (ou trop d'échecs) ──▶ error ──RESET | START──▶ idle | connecting
+ *
+ * Le pilotage par le serveur (appairage, veille, armement, ordre live/idle, direct manuel) vit dans
+ * `core/kiosk/machine.ts` : cette machine-ci ne connaît que la liaison avec le relais.
  */
 export type SessionStatus = "idle" | "connecting" | "live" | "reconnecting" | "error" | "stopping";
 
@@ -15,6 +20,8 @@ export interface SessionState {
   /** Tentatives de reconnexion consécutives (0 hors reconnexion). */
   readonly attempt: number;
   readonly error: string | null;
+  /** `conflict` : un autre direct occupe la mosquée (à réessayer plus tard, sans insister). */
+  readonly errorCode: ErrorCode | null;
   /** Début du direct (ms, horloge de l'appelant) ; conservé pendant une reconnexion. */
   readonly startedAt: number | null;
 }
@@ -24,7 +31,7 @@ export type SessionEvent =
   | { type: "CONNECTED"; at: number }
   | { type: "CONNECTION_LOST"; reason: string }
   | { type: "RETRY_FAILED"; reason: string }
-  | { type: "FATAL"; reason: string }
+  | { type: "FATAL"; reason: string; code?: ErrorCode }
   | { type: "STOP" }
   | { type: "STOPPED" }
   | { type: "RESET" };
@@ -34,12 +41,13 @@ export interface MachineOptions {
   maxAttempts: number;
 }
 
-export const INITIAL_STATE: SessionState = { status: "idle", attempt: 0, error: null, startedAt: null };
+export const INITIAL_STATE: SessionState = { status: "idle", attempt: 0, error: null, errorCode: null, startedAt: null };
 
 const state = (status: SessionStatus, over: Partial<SessionState> = {}): SessionState => ({
   status,
   attempt: 0,
   error: null,
+  errorCode: null,
   startedAt: null,
   ...over,
 });
@@ -51,12 +59,12 @@ export function transition(s: SessionState, e: SessionEvent, opts: MachineOption
       return e.type === "START" ? state("connecting") : s;
     case "connecting":
       if (e.type === "CONNECTED") return state("live", { startedAt: e.at });
-      if (e.type === "FATAL") return state("error", { error: e.reason });
+      if (e.type === "FATAL") return state("error", { error: e.reason, errorCode: e.type === "FATAL" ? (e.code ?? null) : null });
       if (e.type === "STOP") return state("stopping");
       return s;
     case "live":
       if (e.type === "CONNECTION_LOST") return state("reconnecting", { attempt: 1, error: e.reason, startedAt: s.startedAt });
-      if (e.type === "FATAL") return state("error", { error: e.reason });
+      if (e.type === "FATAL") return state("error", { error: e.reason, errorCode: e.type === "FATAL" ? (e.code ?? null) : null });
       if (e.type === "STOP") return state("stopping");
       return s;
     case "reconnecting":
@@ -66,7 +74,7 @@ export function transition(s: SessionState, e: SessionEvent, opts: MachineOption
           ? state("error", { error: e.reason })
           : { ...s, attempt: s.attempt + 1, error: e.reason };
       }
-      if (e.type === "FATAL") return state("error", { error: e.reason });
+      if (e.type === "FATAL") return state("error", { error: e.reason, errorCode: e.type === "FATAL" ? (e.code ?? null) : null });
       if (e.type === "STOP") return state("stopping");
       return s;
     case "stopping":

@@ -1,6 +1,18 @@
-import { ApiError } from "../errors";
+import { ApiError, DeviceRevokedError } from "../errors";
 import type { WhipSignaling } from "../transport/whip";
-import type { Credentials, SessionInfo, StreamMeta, StudioApi } from "./types";
+import type {
+  CurrentLive,
+  DeviceCredentials,
+  HeartbeatReply,
+  HeartbeatReport,
+  PairingApi,
+  PairingChallenge,
+  PairPoll,
+  Slot,
+  StreamKind,
+  StreamMeta,
+  StudioApi,
+} from "./types";
 
 const API = "/api/v1";
 const SDP = "application/sdp";
@@ -23,183 +35,211 @@ export function normalizeBaseUrl(input: string): string {
   return url.origin;
 }
 
-/** Cookies de session, conservés à la main : le processus Node n'a pas de pot à cookies. */
-class CookieJar {
-  private readonly cookies = new Map<string, string>();
-
-  store(res: Response) {
-    for (const line of res.headers.getSetCookie?.() ?? []) {
-      const [pair, ...attrs] = line.split(";");
-      const eq = pair.indexOf("=");
-      if (eq < 1) continue;
-      const name = pair.slice(0, eq).trim();
-      const expired = attrs.some((a) => /^\s*max-age=0\s*$/i.test(a)) || pair.slice(eq + 1) === "";
-      if (expired) this.cookies.delete(name);
-      else this.cookies.set(name, pair.slice(eq + 1).trim());
-    }
-  }
-
-  header(): string {
-    return [...this.cookies].map(([k, v]) => `${k}=${v}`).join("; ");
-  }
-
-  clear() {
-    this.cookies.clear();
-  }
-}
-
 export interface SadaApiOptions {
   fetch?: typeof fetch;
+  /** Délai maximal d'un appel (ms). */
+  timeoutMs?: number;
 }
 
-/** Client HTTP de la console Sada (session par cookie + jeton X-CSRF). Tourne dans Node comme dans un navigateur. */
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** « Un direct est déjà en cours depuis 12:05 » : l'heure vient du serveur quand il la donne. */
+export function conflictMessage(data: Record<string, unknown> | null): string {
+  const since = typeof data?.since === "string" ? new Date(data.since) : null;
+  if (since && !Number.isNaN(since.getTime())) {
+    return `Un direct est déjà en cours depuis ${pad(since.getHours())}:${pad(since.getMinutes())}.`;
+  }
+  const msg = data && (data.message ?? data.error);
+  return typeof msg === "string" && msg ? msg : "Un direct est déjà en cours.";
+}
+
+/** Client HTTP du boîtier. Identité de l'appareil par `Authorization: Bearer`. Tourne dans Node comme dans un navigateur. */
 export class SadaHttpApi implements StudioApi {
   private readonly doFetch: typeof fetch;
-  private readonly jar = new CookieJar();
-  private credentials: Credentials | null = null;
-  private baseUrl = "";
-  private csrf = "";
-  private mosqueId: number | null = null;
-  private reauth: Promise<void> | null = null;
+  private readonly timeoutMs: number;
+  private device: DeviceCredentials | null = null;
 
   constructor(options: SadaApiOptions = {}) {
     this.doFetch = options.fetch ?? ((...a) => fetch(...a));
+    this.timeoutMs = options.timeoutMs ?? 15_000;
   }
 
-  async login(credentials: Credentials): Promise<SessionInfo> {
-    const baseUrl = normalizeBaseUrl(credentials.baseUrl);
-    this.jar.clear();
-    const challenge = await this.send<{ pre: string }>("GET", "/login-challenge", { baseUrl, auth: false });
-    const body = new URLSearchParams({ username: credentials.username.trim(), password: credentials.password, pre: challenge.pre });
-    let session: SessionInfo;
-    try {
-      session = await this.send<SessionInfo>("POST", "/login", {
-        baseUrl,
-        auth: false,
-        body,
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      });
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 401) throw new ApiError(401, "Identifiant ou mot de passe incorrect.");
-      if (e instanceof ApiError && e.status === 429) throw new ApiError(429, "Trop de tentatives. Réessayez dans quelques minutes.");
-      throw e;
-    }
-    this.baseUrl = baseUrl;
-    this.credentials = { ...credentials, baseUrl };
-    this.csrf = session.csrf;
-    this.mosqueId = session.mosque?.id ?? null;
-    return normalizeSession(session);
+  useDevice(device: DeviceCredentials | null): void {
+    this.device = device;
   }
 
-  async selectMosque(mosqueId: number): Promise<SessionInfo> {
-    const session = await this.send<SessionInfo>("POST", "/mosques/select", { json: { mosque_id: mosqueId } });
-    this.csrf = session.csrf || this.csrf;
-    this.mosqueId = mosqueId;
-    return normalizeSession(session);
+  readonly pairing: PairingApi = {
+    start: async (baseUrl) => {
+      const base = normalizeBaseUrl(baseUrl);
+      const d = await this.json<Record<string, unknown>>("POST", `${API}/studio/pair/start`, { base, json: {} });
+      const challenge: PairingChallenge = {
+        deviceCode: String(d.device_code ?? ""),
+        userCode: String(d.user_code ?? ""),
+        expiresInS: Number(d.expires_in) || 600,
+        intervalS: Math.max(2, Number(d.interval) || 5),
+      };
+      if (!challenge.deviceCode || !challenge.userCode) throw new ApiError(502, "Réponse d'appairage incomplète.");
+      return challenge;
+    },
+    poll: async (baseUrl, deviceCode) => {
+      const base = normalizeBaseUrl(baseUrl);
+      try {
+        const d = await this.json<Record<string, unknown>>("POST", `${API}/studio/pair/poll`, { base, json: { device_code: deviceCode } });
+        if (d.device_secret && d.device_id) {
+          const m = (d.mosque ?? {}) as Record<string, unknown>;
+          return {
+            status: "paired",
+            deviceId: String(d.device_id),
+            deviceSecret: String(d.device_secret),
+            mosque: { name: String(m.name ?? "Mosquée"), id: typeof m.id === "number" ? m.id : undefined, slug: typeof m.slug === "string" ? m.slug : undefined },
+          } satisfies PairPoll;
+        }
+        return { status: "pending" };
+      } catch (e) {
+        if (e instanceof ApiError && (e.status === 404 || e.status === 410)) return { status: "expired" };
+        if (e instanceof ApiError && e.status === 403) return { status: "denied" };
+        if (e instanceof ApiError && e.status === 429) return { status: "pending" };
+        throw e;
+      }
+    },
+  };
+
+  async heartbeat(report: HeartbeatReport): Promise<HeartbeatReply> {
+    const d = await this.json<Record<string, unknown>>("POST", `${API}/studio/heartbeat`, { json: report, device: true });
+    return normalizeReply(d);
   }
 
-  async logout(): Promise<void> {
-    if (this.baseUrl) await this.send("POST", "/logout", { retry: false }).catch(() => undefined);
-    this.jar.clear();
-    this.credentials = null;
-    this.csrf = "";
-    this.mosqueId = null;
+  async startLive(meta: StreamMeta): Promise<void> {
+    await this.json("POST", `${API}/studio/live/start`, { json: meta, device: true });
   }
 
-  async announce(_meta: StreamMeta): Promise<void> {
-    // Pas de point d'accès côté Sada pour l'instant : le type et le titre restent locaux à l'application.
+  async stopLive(): Promise<void> {
+    await this.json("POST", `${API}/studio/live/stop`, { json: {}, device: true });
   }
 
   readonly whip: WhipSignaling = {
     offer: async (sdp) => {
-      const res = await this.raw("POST", `${API}/live/studio/whip`, { body: sdp, headers: { "Content-Type": SDP } });
+      const res = await this.raw("POST", `${API}/live/studio/whip`, { body: sdp, headers: { "Content-Type": SDP }, device: true });
+      await this.check(res);
       const location = res.headers.get("location");
       if (res.status !== 201 || !location) throw new ApiError(res.status, `Réponse WHIP inattendue (${res.status}).`);
       return { answer: await res.text(), resource: this.sameOriginPath(location) };
     },
     patchIce: async (resource, fragment) => {
-      await this.raw("PATCH", resource, { body: fragment, headers: { "Content-Type": ICE } });
+      await this.raw("PATCH", resource, { body: fragment, headers: { "Content-Type": ICE }, device: true });
     },
     close: async (resource) => {
-      await this.raw("DELETE", resource, {});
+      await this.raw("DELETE", resource, { device: true });
     },
   };
 
-  /** Seul un chemin de la même instance est suivi : un Location extérieur ne reçoit jamais le cookie. */
+  /** Seul un chemin de la même instance est suivi : un Location extérieur ne reçoit jamais le secret de l'appareil. */
   private sameOriginPath(location: string): string {
-    const u = new URL(location, this.baseUrl);
-    if (u.origin !== this.baseUrl) throw new ApiError(502, "Ressource WHIP hors de l'instance.");
+    const base = this.requireDevice().baseUrl;
+    const u = new URL(location, base);
+    if (u.origin !== base) throw new ApiError(502, "Ressource WHIP hors de l'instance.");
     return u.pathname;
   }
 
-  private async send<T>(
+  private requireDevice(): DeviceCredentials {
+    if (!this.device) throw new DeviceRevokedError("Appareil non appairé.");
+    return this.device;
+  }
+
+  private async json<T>(
     method: string,
     path: string,
-    o: { baseUrl?: string; auth?: boolean; json?: unknown; body?: BodyInit; headers?: Record<string, string>; retry?: boolean } = {},
+    o: { base?: string; json?: unknown; device?: boolean },
   ): Promise<T> {
-    const headers: Record<string, string> = { Accept: "application/json", ...o.headers };
-    let body = o.body;
-    if (o.json !== undefined) {
-      headers["Content-Type"] = "application/json";
-      body = JSON.stringify(o.json);
-    }
-    const res = await this.raw(method, `${API}${path}`, { baseUrl: o.baseUrl, body, headers, auth: o.auth, retry: o.retry });
-    const isJson = (res.headers.get("content-type") ?? "").includes("json");
-    const data = isJson ? await res.json().catch(() => null) : null;
-    if (!res.ok) {
-      const message = (data && (data.message || data.error)) || `Erreur ${res.status}`;
-      throw new ApiError(res.status, String(message));
-    }
+    const res = await this.raw(method, path, {
+      base: o.base,
+      device: o.device,
+      body: o.json === undefined ? undefined : JSON.stringify(o.json),
+      headers: o.json === undefined ? {} : { "Content-Type": "application/json" },
+    });
+    const data = await this.check(res);
     return data as T;
   }
 
-  /** Appel brut. Sur 401 en session ouverte : une reconnexion silencieuse, puis un seul nouvel essai. */
+  /** Lève ApiError pour tout statut d'erreur ; 401/403 d'un appel appareil = appareil révoqué. */
+  private async check(res: Response): Promise<Record<string, unknown> | null> {
+    const isJson = (res.headers.get("content-type") ?? "").includes("json");
+    const data = isJson ? ((await res.json().catch(() => null)) as Record<string, unknown> | null) : null;
+    if (res.ok) return data;
+    if (res.status === 409) throw new ApiError(409, conflictMessage(data));
+    const message = (data && (data.message || data.error)) || `Erreur ${res.status}`;
+    throw new ApiError(res.status, String(message));
+  }
+
   private async raw(
     method: string,
     path: string,
-    o: { baseUrl?: string; body?: BodyInit; headers?: Record<string, string>; auth?: boolean; retry?: boolean },
+    o: { base?: string; body?: BodyInit; headers?: Record<string, string>; device?: boolean },
   ): Promise<Response> {
-    const base = o.baseUrl ?? this.baseUrl;
-    if (!base) throw new ApiError(401, "Non connecté.");
-    const attempt = async (): Promise<Response> => {
-      const headers: Record<string, string> = { ...o.headers };
-      const cookie = this.jar.header();
-      if (cookie) headers.Cookie = cookie;
-      if (o.auth !== false && method !== "GET" && this.csrf) headers["X-CSRF"] = this.csrf;
-      let res: Response;
-      try {
-        res = await this.doFetch(base + path, { method, headers, body: o.body, redirect: "manual" });
-      } catch {
-        throw new ApiError(0, "Serveur Sada injoignable.");
-      }
-      this.jar.store(res);
-      return res;
-    };
-    let res = await attempt();
-    if (res.status === 401 && o.auth !== false && o.retry !== false && this.credentials) {
-      await this.relogin();
-      res = await attempt();
+    const headers: Record<string, string> = { Accept: "application/json", ...o.headers };
+    let base = o.base ?? "";
+    if (o.device) {
+      const d = this.requireDevice();
+      base = d.baseUrl;
+      headers.Authorization = `Bearer ${d.deviceSecret}`;
     }
-    if (!res.ok && o.auth !== false && path.startsWith(`${API}/live/studio/whip`)) {
-      throw new ApiError(res.status, `Sada a refusé la requête WHIP (${res.status}).`);
+    if (!base) throw new ApiError(0, "Adresse de l'instance manquante.");
+    let res: Response;
+    try {
+      res = await this.doFetch(base + path, { method, headers, body: o.body, redirect: "manual", signal: AbortSignal.timeout(this.timeoutMs) });
+    } catch {
+      throw new ApiError(0, "Serveur Sada injoignable.");
+    }
+    if (o.device && (res.status === 401 || res.status === 403)) {
+      // Le secret de l'appareil est refusé : il a été révoqué côté console.
+      throw new DeviceRevokedError();
     }
     return res;
   }
-
-  private relogin(): Promise<void> {
-    this.reauth ??= (async () => {
-      const creds = this.credentials;
-      const mosque = this.mosqueId;
-      if (!creds) throw new ApiError(401, "Non connecté.");
-      await this.login(creds);
-      if (mosque !== null) await this.selectMosque(mosque);
-    })().finally(() => {
-      this.reauth = null;
-    });
-    return this.reauth;
-  }
 }
 
-function normalizeSession(s: SessionInfo): SessionInfo {
-  return { ...s, mosques: s.mosques ?? [] };
+function toMs(v: unknown): number | null {
+  if (typeof v === "number") return v < 1e12 ? v * 1000 : v;
+  if (typeof v === "string") {
+    const t = Date.parse(v);
+    return Number.isNaN(t) ? null : t;
+  }
+  return null;
+}
+
+const kind = (v: unknown): StreamKind => (v === "dars" ? "dars" : "khutba");
+
+function normalizeSlot(raw: unknown): Slot | null {
+  const s = raw as Record<string, unknown> | null;
+  if (!s) return null;
+  const startsAt = toMs(s.starts_at ?? s.start);
+  if (startsAt === null) return null;
+  return {
+    id: s.id === undefined ? undefined : String(s.id),
+    type: kind(s.type),
+    title: String(s.title ?? ""),
+    startsAt,
+    endsAt: toMs(s.ends_at ?? s.end),
+  };
+}
+
+/** Tolérant : une réponse partielle ne doit jamais faire tomber la boucle de battement. */
+export function normalizeReply(d: Record<string, unknown>): HeartbeatReply {
+  const schedule = Array.isArray(d.schedule) ? d.schedule.map(normalizeSlot).filter((s): s is Slot => s !== null) : [];
+  schedule.sort((a, b) => a.startsAt - b.startsAt);
+  const c = d.current as Record<string, unknown> | null | undefined;
+  const current: CurrentLive | null = c
+    ? {
+        type: kind(c.type),
+        title: String(c.title ?? ""),
+        source: c.source === "manual" ? "manual" : "schedule",
+        slotId: c.slot_id === undefined || c.slot_id === null ? undefined : String(c.slot_id),
+      }
+    : null;
+  return {
+    config: (d.config as Record<string, unknown>) ?? {},
+    schedule,
+    command: d.command === "live" ? "live" : "idle",
+    current,
+  };
 }

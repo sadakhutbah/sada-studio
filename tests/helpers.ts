@@ -1,101 +1,11 @@
-import { createServer, type IncomingMessage, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import type { DeviceCredentials, HeartbeatReply, HeartbeatReport, PairPoll, PairingChallenge, StreamMeta, StudioApi } from "../src/core/api/types";
+import { ApiError, DeviceRevokedError } from "../src/core/errors";
+import type { DeviceStore, PersistStore, Persisted } from "../src/core/kiosk/supervisor";
+import { createMockSada, type MockSada } from "../scripts/mock-sada.mjs";
 
-export interface Recorded {
-  method: string;
-  url: string;
-  headers: IncomingMessage["headers"];
-  body: string;
-}
-
-export interface MockSada {
-  url: string;
-  requests: Recorded[];
-  /** Les n prochains appels WHIP répondent 401 (session expirée). */
-  expireSessionOnce(): void;
-  /** Statut forcé pour l'offre WHIP (ex. 409). */
-  whipStatus: number | null;
-  close(): Promise<void>;
-}
-
-/** Faux serveur Sada : login à défi anti-rejeu, choix de mosquée, trois routes WHIP. */
-export async function startMockSada(): Promise<MockSada> {
-  const requests: Recorded[] = [];
-  let sessions = 0;
-  let valid = new Set<string>();
-  let expire = false;
-  const mock: MockSada = {
-    url: "",
-    requests,
-    whipStatus: null,
-    expireSessionOnce: () => {
-      expire = true;
-    },
-    close: () => new Promise((r) => server.close(() => r())),
-  };
-
-  const server: Server = createServer(async (req, res) => {
-    const chunks: Buffer[] = [];
-    for await (const c of req) chunks.push(c as Buffer);
-    const body = Buffer.concat(chunks).toString();
-    const url = req.url ?? "";
-    requests.push({ method: req.method ?? "", url, headers: req.headers, body });
-    const json = (status: number, data: unknown, extra: Record<string, string | string[]> = {}) => {
-      res.writeHead(status, { "content-type": "application/json", ...extra });
-      res.end(JSON.stringify(data));
-    };
-    const cookie = (req.headers.cookie ?? "").split("; ").find((c) => c.startsWith("sada_session="))?.split("=")[1] ?? "";
-    const signedIn = valid.has(cookie);
-
-    if (url === "/api/v1/login-challenge") return json(200, { pre: "pre123" }, { "set-cookie": "sada_pre=pre123; Path=/; HttpOnly" });
-    if (url === "/api/v1/login" && req.method === "POST") {
-      const f = new URLSearchParams(body);
-      if (f.get("password") !== "secret" || f.get("pre") !== "pre123") return json(401, { error: "identifiants" });
-      const token = `tok${++sessions}`;
-      valid.add(token);
-      return json(
-        200,
-        {
-          user: { id: 7, name: "Imam Test", role: "admin", role_label: "Administrateur", permissions: ["live"] },
-          mosque: null,
-          mosques: [
-            { id: 1, slug: "alpha", name: "Mosquée Alpha", access: "member" },
-            { id: 2, slug: "beta", name: "Mosquée Beta", access: "member" },
-          ],
-          csrf: `csrf-${token}`,
-        },
-        { "set-cookie": `sada_session=${token}; Path=/; HttpOnly` },
-      );
-    }
-    if (!signedIn || (expire && url.includes("/whip"))) {
-      expire = false;
-      valid = new Set();
-      return json(401, { error: "connexion requise" });
-    }
-    if (url === "/api/v1/mosques/select") {
-      const id = JSON.parse(body).mosque_id;
-      return json(200, {
-        user: { id: 7, name: "Imam Test", role: "admin", role_label: "Administrateur", permissions: ["live"] },
-        mosque: { id, slug: "alpha", name: "Mosquée Alpha" },
-        mosques: [],
-        csrf: `csrf-${cookie}`,
-      });
-    }
-    if (url === "/api/v1/live/studio/whip" && req.method === "POST") {
-      if (mock.whipStatus) return json(mock.whipStatus, { error: "input is not push" });
-      res.writeHead(201, { "content-type": "application/sdp", location: "/api/v1/live/studio/whip/sess-1" });
-      return res.end("v=0\r\nanswer\r\n");
-    }
-    if (url === "/api/v1/live/studio/whip/sess-1") {
-      res.writeHead(req.method === "DELETE" ? 200 : 204);
-      return res.end();
-    }
-    json(404, { error: "not found" });
-  });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  mock.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return mock;
-}
+/** Faux serveur Sada : le même moteur que `npm run mock` (scripts/mock-sada.mjs). */
+export const startMockSada = (): Promise<MockSada> => createMockSada();
+export type { MockSada };
 
 /** Faux RTCPeerConnection : suffisant pour dérouler une négociation WHIP. */
 export class FakePeer extends EventTarget {
@@ -141,3 +51,72 @@ export class FakePeer extends EventTarget {
 }
 
 export const fakeStream = () => ({ getTracks: () => [{ kind: "video" }, { kind: "audio" }] }) as unknown as MediaStream;
+
+export const MOSQUE = { id: 1, slug: "alpha", name: "Mosquée Alpha" };
+
+export const IDLE_REPLY: HeartbeatReply = { config: {}, schedule: [], command: "idle", current: null };
+
+/** API en mémoire : réponses scriptées, appels enregistrés. Pour les tests de superviseur sans réseau. */
+export class FakeApi implements StudioApi {
+  reply: HeartbeatReply = IDLE_REPLY;
+  beats: HeartbeatReport[] = [];
+  beatError: Error | null = null;
+  startError: Error | null = null;
+  stopError: Error | null = null;
+  startCalls: StreamMeta[] = [];
+  stopCalls = 0;
+  device: DeviceCredentials | null = null;
+  pollQueue: PairPoll[] = [];
+  starts = 0;
+  readonly whip = { offer: async () => ({ answer: "", resource: "" }), patchIce: async () => undefined, close: async () => undefined };
+  readonly pairing = {
+    start: async (): Promise<PairingChallenge> => {
+      this.starts++;
+      return { deviceCode: `dc${this.starts}`, userCode: `CODE-${this.starts}`, expiresInS: 60, intervalS: 2 };
+    },
+    poll: async (): Promise<PairPoll> => this.pollQueue.shift() ?? { status: "pending" },
+  };
+  useDevice(d: DeviceCredentials | null) {
+    this.device = d;
+  }
+  async heartbeat(r: HeartbeatReport) {
+    this.beats.push(r);
+    if (this.beatError) throw this.beatError;
+    return this.reply;
+  }
+  async startLive(m: StreamMeta) {
+    if (this.startError) throw this.startError;
+    this.startCalls.push(m);
+  }
+  async stopLive() {
+    if (this.stopError) throw this.stopError;
+    this.stopCalls++;
+  }
+}
+
+export const revoked = () => new DeviceRevokedError();
+export const network = () => new ApiError(0, "Serveur Sada injoignable.");
+
+export class MemoryDevices implements DeviceStore {
+  saved: DeviceCredentials | null = null;
+  persistent = true;
+  load() {
+    return this.saved;
+  }
+  save(d: DeviceCredentials) {
+    this.saved = d;
+  }
+  clear() {
+    this.saved = null;
+  }
+}
+
+export class MemoryPersist implements PersistStore {
+  data: Persisted = { wasLive: false, suppressed: [] };
+  load() {
+    return this.data;
+  }
+  save(p: Persisted) {
+    this.data = p;
+  }
+}
