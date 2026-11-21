@@ -8,12 +8,13 @@ files:
   - out/**/*
   - package.json
 asar: true
-# Updates: a plain static HTTP directory (generic provider), so mosques never need a GitHub token and the
-# repository can stay private. Override the URL per machine with SADA_STUDIO_UPDATE_URL or update.json
-# (see README, « Mise à jour automatique »). CI uploads the files to that directory.
+# Updates: public GitHub Releases (no token on the client). A machine can be pointed at another static HTTP
+# directory with SADA_STUDIO_UPDATE_URL or update.json (generic provider), see README.
 publish:
-  provider: generic
-  url: https://updates.sadakhutbah.org/studio/
+  provider: github
+  owner: sadakhutbah
+  repo: sada-studio
+  releaseType: release
 extraResources:
   - { from: build/icon.png, to: icon.png }
 mac:

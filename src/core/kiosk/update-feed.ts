@@ -1,11 +1,11 @@
 /**
  * Where the application looks for updates. The default feed is baked into the installer by electron-builder
- * (`publish` in electron-builder.yml, a plain static HTTP directory: no token ever ships with the app).
+ * (`publish` in electron-builder.yml: the public GitHub Releases, no token ever ships with the app).
  * An operator can override it per machine without rebuilding: environment variable first, then the
  * `update.json` file in the user-data directory.
  */
 export interface UpdateFeed {
-  /** Base URL of a directory serving latest.yml / latest-mac.yml / latest-linux.yml and the installers. */
+  /** Override only: base URL of a directory serving latest.yml / latest-mac.yml / latest-linux.yml and the installers. */
   url: string;
   /** Release channel: "latest" (stable) or e.g. "beta" (reads beta.yml). */
   channel: string;

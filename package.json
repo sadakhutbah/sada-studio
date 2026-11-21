@@ -2,10 +2,15 @@
   "name": "sada-studio",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "description": "Application compagnon de Sada : diffuser khutbah et dars sans OBS",
   "author": "Sada <contact@sadakhutbah.org>",
   "desktopName": "sada-studio.desktop",
   "homepage": "https://sadakhutbah.org",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sadakhutbah/sada-studio.git"
+  },
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

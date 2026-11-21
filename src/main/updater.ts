@@ -17,7 +17,8 @@ function readFeedFile(): unknown {
 }
 
 /**
- * Automatic update from a static HTTP feed (generic provider, see `publish` in electron-builder.yml; no token needed).
+ * Automatic update from the public GitHub Releases (see `publish` in electron-builder.yml; no token needed), or from a
+ * per-machine static HTTP feed override (generic provider).
  * Download happens in the background whenever it wants; installation goes through `UpdateGate`: never during a live
  * stream nor in the margin before a slot. Inactive outside an installed application (development, tests).
  */

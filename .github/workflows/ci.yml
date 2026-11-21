@@ -27,8 +27,8 @@ jobs:
       - run: npm run build
 
   installers:
-    # Installers for the three platforms, as workflow artifacts, only on vX.Y.Z tags. Nothing is published to GitHub
-    # Releases (the repository is private): the `publish-feed` job copies the files to the update server.
+    # Installers for the three platforms, as workflow artifacts, only on vX.Y.Z tags; the `release` job then
+    # publishes them in a GitHub Release, which is the update feed of the installed applications.
     # Code signing is optional: it is switched on only when the matching secrets exist.
     if: startsWith(github.ref, 'refs/tags/v')
     needs: check
@@ -82,30 +82,24 @@ jobs:
             dist/latest*.yml
           if-no-files-found: error
 
-  publish-feed:
-    # Copies every installer and latest*.yml to the update server (generic provider). Skipped without the secrets.
+  release:
+    # Publishes every installer and latest*.yml in the GitHub Release of the tag (GITHUB_TOKEN of the workflow).
     needs: installers
     runs-on: ubuntu-latest
-    env:
-      UPDATE_SSH_HOST: ${{ secrets.UPDATE_SSH_HOST }}
-      UPDATE_SSH_USER: ${{ secrets.UPDATE_SSH_USER }}
-      UPDATE_SSH_KEY: ${{ secrets.UPDATE_SSH_KEY }}
-      UPDATE_SSH_PATH: ${{ secrets.UPDATE_SSH_PATH }}
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: feed
           pattern: sada-studio-*
           merge-multiple: true
-      - name: Upload to the update server
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          if [ -z "$UPDATE_SSH_HOST" ] || [ -z "$UPDATE_SSH_KEY" ] || [ -z "$UPDATE_SSH_PATH" ]; then
-            echo "UPDATE_SSH_* secrets not set: files stay available as workflow artifacts only."
-            exit 0
-          fi
-          install -m 600 /dev/null key
-          printf '%s\n' "$UPDATE_SSH_KEY" > key
-          ssh="ssh -i key -o StrictHostKeyChecking=accept-new"
-          # Installers first, manifests last: a client never sees a manifest whose file is not there yet.
-          rsync -av -e "$ssh" --exclude 'latest*.yml' feed/ "$UPDATE_SSH_USER@$UPDATE_SSH_HOST:$UPDATE_SSH_PATH/"
-          rsync -av -e "$ssh" feed/latest*.yml "$UPDATE_SSH_USER@$UPDATE_SSH_HOST:$UPDATE_SSH_PATH/"
+          ls -l feed
+          # Created as a draft, undrafted once every asset is uploaded: a client never sees a half-published release.
+          gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --generate-notes feed/*
+          gh release edit "$GITHUB_REF_NAME" --draft=false
