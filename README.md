@@ -1,83 +1,71 @@
-# Sada Studio
+<p align="center">
+  <img src="src/renderer/src/assets/sada-mark-or.svg" alt="Sadā" width="96">
+</p>
 
-Sada Studio is a kiosk-style broadcasting app for mosques. It runs on a computer in the mosque, captures the camera and microphone, and streams to a [Sada](https://github.com/sadakhutbah/sada) server over WHIP while a khutbah or a lesson is on air. Sada relays, records and transcribes the stream.
+<h1 align="center">Sadā Studio</h1>
 
-It is a client of the Sada API: it needs a Sada instance to pair with. Built with Electron, Vite, React and TypeScript.
+<p align="center">
+  The broadcasting app of <a href="https://github.com/sadakhutbah/sada">Sadā</a>: a mosque computer with a camera
+  becomes a live stream for the khutba and lessons, with nobody behind it.
+</p>
+
+<p align="center">
+  <a href="https://github.com/sadakhutbah/sada-studio/actions/workflows/ci.yml"><img src="https://github.com/sadakhutbah/sada-studio/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-E2C27A" alt="License: AGPL-3.0"></a>
+</p>
+
+---
+
+Sadā Studio runs on the mosque's computer, next to the camera and the microphone. You pair it once with
+your Sadā instance, then it waits: when the schedule (or someone in the console) starts a live, it
+streams to Sadā, which relays it to Facebook, YouTube or any RTMP destination, records it and prepares
+the transcript and clips. When the live ends, it goes back to standby.
+
+It replaces OBS for mosques that use the hosted version of Sadā: nothing to configure, nothing to start.
 
 ## Features
 
-- **Pairing**: on first launch, enter the address of your Sada instance; a code is displayed and is entered once in the Sada console (Devices). The device secret is stored encrypted with Electron `safeStorage` (DPAPI on Windows).
-- **Unattended operation**: starts with the user session, sends a heartbeat to the server (every 30 s, 10 s while live) and streams **only while the server orders a live**. The camera is prepared shortly before a scheduled slot without sending anything.
-- **Manual mode**: start and stop a live (khutbah, lesson, conference) outside the schedule, with a title. A scheduled slot never interrupts a manual live.
-- **Workstation health panel** (read-only): camera, microphone, automatic Windows sign-in, Windows Update active hours versus the schedule, sleep settings, start-with-Windows. Each issue comes with a fix.
-- **Resilience**: single instance, tray icon, crash recovery, retries with bounded backoff when the network or camera is missing.
-- **Automatic updates** from GitHub Releases. An update is never installed during a live, an ordered live or a slot, nor in the 30 minutes before a slot.
+- **Pair with a code**: enter the address of your Sadā instance, type the code shown in the Sadā console.
+  That's all the setup.
+- **Hands-free**: starts with the computer, streams only when Sadā orders a live, prepares the camera
+  shortly before a scheduled slot.
+- **Manual live**: start a khutba, a lesson or a conference outside the schedule, with a title.
+  A scheduled slot never cuts a manual live.
+- **One stream per mosque**: if OBS or another device is already live, Studio is refused; an
+  administrator can take over from the console.
+- **Workstation health**: camera, microphone, sleep, automatic sign-in, Windows Update hours. Each issue
+  comes with its fix, and Sadā e-mails the mosque if something stays broken.
+- **Resilient**: single instance, tray icon, crash recovery, reconnects on its own when the network or
+  the camera comes back.
+- **Automatic updates**, never during a live nor just before a slot.
 
-The server contract is documented in [`docs/studio-devices.md`](https://github.com/sadakhutbah/sada/blob/main/docs/studio-devices.md) of the Sada repository. `scripts/mock-sada.mjs` is a mock server that follows it.
+## Download
+
+Installers for Windows, macOS and Linux are on the [Releases](https://github.com/sadakhutbah/sada-studio/releases)
+page. Studio needs a Sadā instance to pair with: self-hosted ([sada](https://github.com/sadakhutbah/sada))
+or hosted.
 
 ## Development
 
 Requires Node.js 22.
 
-```
+```bash
 npm ci
-npm run dev        # app with hot reload
-npm run mock       # mock Sada server on http://127.0.0.1:8787
+npm run mock                                          # mock Sadā server on http://127.0.0.1:8787
+SADA_STUDIO_INSTANCE=http://127.0.0.1:8787 npm run dev  # app with hot reload, paired to the mock
 npm run lint && npm run typecheck && npm test
 ```
 
-To try pairing against the mock server:
+Without a camera (WSL, CI), set `SADA_STUDIO_FAKE_MEDIA=1`.
 
-```
-SADA_STUDIO_INSTANCE=http://127.0.0.1:8787 npm run dev
-```
+Layout: `src/core/` (pairing, kiosk state machine, health checks, API client), `src/main/` (window,
+tray, device store, updater), `src/renderer/` (React UI), `scripts/` (mock server, icons), `tests/`.
+The server contract is in [`docs/studio-devices.md`](https://github.com/sadakhutbah/sada/blob/main/docs/studio-devices.md)
+of the Sadā repository.
 
-`SADA_STUDIO_INSTANCE` is honoured only when running from source, not by the installed app. Without a camera (WSL, CI), set `SADA_STUDIO_FAKE_MEDIA=1` to simulate camera and microphone; on Linux without a sandbox, also pass `--no-sandbox`.
-
-### Layout
-
-```
-src/core/       Electron-independent core (session, kiosk state machine, health checks, API client, transports)
-src/main/       window, tray, single instance, IPC, device store, updater
-src/preload/    `window.studio` bridge
-src/renderer/   React UI
-scripts/        mock server, icon generation
-tests/          unit and integration tests (against the mock server)
-```
-
-The Sada client and the device secret live in the main process; the UI only receives a `KioskSnapshot`. The server is the master: the app streams only when it is ordered to.
-
-## Build
-
-```
-npm run dist       # installer for the current OS, in dist/
-```
-
-Targets: Windows (NSIS), macOS (dmg, zip, universal), Linux (AppImage). The Windows installer cannot be built on Linux without `wine`; CI builds all three. The `appId` (`org.sadakhutbah.studio`) identifies the app to the OS and to updates: do not change it.
-
-Builds are unsigned unless signing secrets are provided to the workflow (`MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` for macOS; `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD` for Windows). Unsigned macOS builds are blocked by Gatekeeper and **cannot auto-update**; unsigned Windows builds trigger a SmartScreen warning.
-
-## Publishing updates
-
-Installed apps check the GitHub Releases of this repository (15 s after start, then every 6 h) and download in the background. No token is needed on the client.
-
-1. Bump `version` in `package.json`.
-2. Push a tag `vX.Y.Z`.
-
-The workflow builds the three platforms and publishes the installers and `latest*.yml` files in a GitHub Release, using the workflow's `GITHUB_TOKEN`.
-
-### Per-machine override
-
-To point one machine at another static HTTP directory serving `latest.yml`, `latest-mac.yml` or `latest-linux.yml` and the installers (generic provider), set `SADA_STUDIO_UPDATE_URL` (and optionally `SADA_STUDIO_UPDATE_CHANNEL`), or create `update.json` in the app data directory:
-
-```json
-{ "url": "https://example.org/studio/", "channel": "latest" }
-```
-
-`https` is required; `http` is accepted only on localhost.
-
-Local end-to-end test: build two versions (`electron-builder --linux -c.directories.output=/tmp/v2 -c.extraMetadata.version=0.1.1`), serve the newer one with `python3 -m http.server 8099 --bind 127.0.0.1`, run the older one under `xvfb-run` with `SADA_STUDIO_UPDATE_URL=http://127.0.0.1:8099/`, and read `studio.log`.
+Building installers and publishing updates: [`docs/releasing.md`](docs/releasing.md).
 
 ## License
 
-[GNU AGPL-3.0-or-later](LICENSE), like Sada.
+[GNU AGPL-3.0](LICENSE), like Sadā. You may use, modify and redistribute Studio; if you distribute a
+modified version, its source code must be published under the same license.
