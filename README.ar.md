@@ -7,12 +7,12 @@
 <h1 align="center">صدى ستوديو · Sadā Studio</h1>
 
 <p align="center">
-  تطبيق البثّ الخاص بـ<a href="https://github.com/sadakhutbah/sada">صدى</a>: حاسوب المسجد المزوَّد بكاميرا
+  تطبيق البثّ الخاص بـ<a href="https://github.com/thesadaproject/sada">صدى</a>: حاسوب المسجد المزوَّد بكاميرا
   يتحوّل إلى بثّ مباشر للخطبة والدروس، دون أن يبقى أحد خلف الكاميرا.
 </p>
 
 <p align="center">
-  <a href="https://github.com/sadakhutbah/sada-studio/actions/workflows/ci.yml"><img src="https://github.com/sadakhutbah/sada-studio/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/thesadaproject/sada-studio/actions/workflows/ci.yml"><img src="https://github.com/thesadaproject/sada-studio/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-E2C27A" alt="License: AGPL-3.0"></a>
 </p>
 
@@ -45,8 +45,8 @@
 
 ## التنزيل
 
-مثبّتات Windows وmacOS وLinux في صفحة [الإصدارات](https://github.com/sadakhutbah/sada-studio/releases).
-يحتاج «ستوديو» إلى نسخة من «صدى» يقترن بها: مستضافة ذاتيًّا ([sada](https://github.com/sadakhutbah/sada))
+مثبّتات Windows وmacOS وLinux في صفحة [الإصدارات](https://github.com/thesadaproject/sada-studio/releases).
+يحتاج «ستوديو» إلى نسخة من «صدى» يقترن بها: مستضافة ذاتيًّا ([sada](https://github.com/thesadaproject/sada))
 أو النسخة المستضافة.
 
 ## التطوير
@@ -69,7 +69,7 @@ npm run lint && npm run typecheck && npm test
 البنية: `src/core/` (الاقتران، وآلة حالات الكشك، وفحوص السلامة، وعميل الواجهة البرمجية)، و`src/main/`
 (النافذة، وأيقونة الشريط، وتخزين الأجهزة، والمحدّث)، و`src/renderer/` (واجهة React)، و`scripts/` (الخادم
 التجريبي، والأيقونات)، و`tests/`. عقد الخادم موثّق في
-[`docs/studio-devices.md`](https://github.com/sadakhutbah/sada/blob/main/docs/studio-devices.md)
+[`docs/studio-devices.md`](https://github.com/thesadaproject/sada/blob/main/docs/studio-devices.md)
 في مستودع «صدى».
 
 بناء المثبّتات ونشر التحديثات: [`docs/releasing.md`](docs/releasing.md).
