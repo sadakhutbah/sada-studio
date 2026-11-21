@@ -14,6 +14,8 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-E2C27A" alt="License: AGPL-3.0"></a>
 </p>
 
+<p align="center"><b>English</b> · <a href="README.ar.md">العربية</a></p>
+
 ---
 
 Sadā Studio runs on the mosque's computer, next to the camera and the microphone. You pair it once with
