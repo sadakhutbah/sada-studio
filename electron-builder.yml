@@ -8,7 +8,14 @@ files:
   - package.json
 asar: true
 # Pas de signature pour l'instant (voir README, « Signature »).
-publish: null
+# Mise à jour automatique : releases GitHub du dépôt (voir README, « Mise à jour automatique »).
+publish:
+  provider: github
+  owner: sadakhutbah
+  repo: sada-studio
+  releaseType: release
+extraResources:
+  - { from: build/icon.png, to: icon.png }
 mac:
   category: public.app-category.video
   identity: null

@@ -1,17 +1,26 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { StudioBridge } from "../shared/ipc";
+import type { KioskSnapshot, StudioBridge } from "../shared/ipc";
 
 const bridge: StudioBridge = {
-  rememberState: () => ipcRenderer.invoke("studio:remember-state"),
-  login: (credentials, remember) => ipcRenderer.invoke("studio:login", credentials, remember),
-  autoLogin: () => ipcRenderer.invoke("studio:auto-login"),
-  selectMosque: (id) => ipcRenderer.invoke("studio:select-mosque", id),
-  logout: (forget) => ipcRenderer.invoke("studio:logout", forget),
+  kiosk: {
+    get: () => ipcRenderer.invoke("kiosk:get"),
+    onChange: (cb) => {
+      const listener = (_e: unknown, s: KioskSnapshot) => cb(s);
+      ipcRenderer.on("kiosk:changed", listener);
+      return () => void ipcRenderer.removeListener("kiosk:changed", listener);
+    },
+    startPairing: (baseUrl) => ipcRenderer.invoke("kiosk:start-pairing", baseUrl),
+    cancelPairing: () => ipcRenderer.invoke("kiosk:cancel-pairing"),
+    unpair: () => ipcRenderer.invoke("kiosk:unpair"),
+    startManual: (meta) => ipcRenderer.invoke("kiosk:start-manual", meta),
+    stopLive: () => ipcRenderer.invoke("kiosk:stop-live"),
+    dismissConflict: () => ipcRenderer.invoke("kiosk:dismiss-conflict"),
+    report: (r) => ipcRenderer.send("kiosk:report", r),
+    windowsFacts: () => ipcRenderer.invoke("kiosk:windows-facts"),
+  },
   whipOffer: (sdp) => ipcRenderer.invoke("studio:whip-offer", sdp),
   whipPatch: (resource, fragment) => ipcRenderer.invoke("studio:whip-patch", resource, fragment),
   whipClose: (resource) => ipcRenderer.invoke("studio:whip-close", resource),
-  keepAwake: (on) => ipcRenderer.invoke("studio:keep-awake", on),
-  version: process.env.npm_package_version ?? "",
 };
 
 contextBridge.exposeInMainWorld("studio", bridge);
