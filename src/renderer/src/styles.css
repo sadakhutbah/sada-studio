@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/* Charte reprise telle quelle de la console Sada (sada/web/src/styles.css) :
+   papier, encre verte, feuille dorée, rouge direct. EB Garamond + Source Sans 3. */
+@theme {
+  --color-paper: #f7f3ea;
+  --color-paper-2: #efe8d8;
+  --color-ink: #12261e;
+  --color-muted: #5e6b63;
+  --color-line: #ded5c1;
+  --color-leaf: #e2c27a;
+  --color-leaf-2: #cfa95a;
+  --color-green: #3d6b57;
+  --color-deep: #1c3a2e;
+  --color-deeper: #12261e;
+  --color-night: #0b1a14;
+  --color-live: #9e2a2b;
+  --color-warn: #b7791f;
+  --color-warn-bg: #fbf3e2;
+  --color-err-bg: #fbe9e7;
+  --color-night-ink: #f0ead9;
+  --color-night-muted: #b3b8a6;
+  --color-dot-off: #6b7a70;
+  --color-live-off: #f3c7c2;
+  --font-serif: "EB Garamond", "Instrument Serif", Georgia, "Times New Roman", serif;
+  --font-sans: "Source Sans 3 Variable", "Source Sans 3", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font: 400 16px/1.5 var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    font-synthesis: none;
+    margin: 0;
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus,
+  button:focus-visible {
+    outline: 2px solid var(--color-leaf);
+    outline-offset: 1px;
+  }
+
+  ::selection {
+    background: var(--color-leaf);
+    color: var(--color-night);
+  }
+}
+
+/* Liste déroulante dessinée par nous, comme dans la console. */
+@utility select-chevron {
+  appearance: none;
+  padding-block: 0;
+  padding-right: 2.25rem;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'><path d='M5 7.5 10 12.5 15 7.5' fill='none' stroke='%233d4a3a' stroke-width='1.8'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  background-size: 18px;
+}

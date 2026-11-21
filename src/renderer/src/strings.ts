@@ -1,0 +1,70 @@
+/** Libellés de l'interface. Le vocabulaire reprend celui de la console Sada (web/src/i18n.ts). */
+export const fr = {
+  app: { name: "Sadā", studio: "Studio" },
+  login: {
+    title: "Connexion",
+    instance: "Adresse de l'instance",
+    instanceHelp: "Celle de votre console Sada, par exemple console.sadakhutbah.org.",
+    user: "Identifiant",
+    password: "Mot de passe",
+    remember: "Mémoriser la connexion sur cet ordinateur",
+    rememberHelp: "Chiffrée par le coffre du système.",
+    noVault: "Ce système n'a pas de coffre sécurisé : la connexion ne sera pas mémorisée.",
+    submit: "Entrer",
+    sending: "Connexion…",
+  },
+  picker: {
+    title: "Choisir une mosquée",
+    hint: "Bonjour {name}. Choisissez la mosquée qui diffuse.",
+    none: "Aucune mosquée n'est rattachée à ce compte.",
+    support: "Accès support",
+  },
+  nav: { logout: "Déconnexion", switch: "Changer de mosquée" },
+  live: {
+    kicker: "Direct",
+    title: "Préparer le direct",
+    kind: "Type",
+    khutba: "Khutba",
+    dars: "Dars",
+    titleField: "Titre",
+    titlePlaceholder: "Khutba du vendredi",
+    titleHelp: "Gardé sur cet ordinateur pour l'instant.",
+    noRight: "Ce compte n'a pas le droit de piloter le direct dans cette mosquée.",
+  },
+  sources: {
+    kicker: "Sources",
+    camera: "Caméra",
+    microphone: "Micro",
+    none: "Aucune caméra détectée",
+    noMic: "Aucun micro détecté",
+    default: "Par défaut",
+    lockedLive: "Réglages verrouillés pendant le direct.",
+  },
+  audio: {
+    kicker: "Traitement du son",
+    hint: "Désactivés par défaut : ils altèrent la voix et les récitations.",
+    echoCancellation: "Annulation d'écho",
+    noiseSuppression: "Réduction de bruit",
+    autoGainControl: "Gain automatique",
+  },
+  preview: { empty: "Aperçu indisponible", level: "Niveau du micro", loading: "Ouverture de la caméra…" },
+  status: {
+    idle: "Prêt",
+    connecting: "Connexion…",
+    live: "En direct",
+    reconnecting: "Reconnexion… (essai {n})",
+    error: "Erreur",
+    stopping: "Arrêt…",
+  },
+  controls: {
+    start: "Démarrer le direct",
+    stop: "Arrêter le direct",
+    bitrate: "Débit",
+    duration: "Durée",
+    latency: "Latence",
+  },
+  common: { error: "Erreur" },
+} as const;
+
+export const fill = (s: string, vars: Record<string, string | number>) =>
+  s.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));
