@@ -1,46 +1,122 @@
 import type { WhipSignaling } from "../transport/whip";
 
-export interface Credentials {
-  /** Adresse de l'instance Sada, ex. https://console.sadakhutbah.org */
-  baseUrl: string;
-  username: string;
-  password: string;
-}
+export type StreamKind = "khutba" | "dars" | "conference";
 
 export interface MosqueInfo {
-  id: number;
-  slug: string;
   name: string;
+  id?: number;
+  slug?: string;
 }
 
-export interface MosqueChoice extends MosqueInfo {
-  access: "member" | "support";
+/** What identifies the device to Sada once paired. The secret never leaves the main process. */
+export interface DeviceCredentials {
+  baseUrl: string;
+  deviceId: string;
+  deviceSecret: string;
+  mosque: MosqueInfo;
 }
 
-/** Ce que Sada rend après connexion ou choix de la mosquée (sous-ensemble de la session de la console). */
-export interface SessionInfo {
-  user: { id: number; name: string; role: string; role_label: string; permissions: string[]; operator?: boolean };
-  mosque: MosqueInfo | null;
-  mosques: MosqueChoice[];
-  csrf: string;
+export interface PairingChallenge {
+  deviceCode: string;
+  /** Short code to type in the console, e.g. "K7QM-4TZ2". */
+  userCode: string;
+  expiresInS: number;
+  /** Recommended polling interval, in seconds. */
+  intervalS: number;
 }
 
-export type StreamKind = "khutba" | "dars";
+export type PairPoll =
+  | { status: "pending" }
+  | { status: "paired"; deviceId: string; deviceSecret: string; mosque: MosqueInfo }
+  | { status: "expired" }
+  | { status: "denied" };
+
+/** A schedule slot (times in ms since the epoch). */
+export interface Slot {
+  id?: string;
+  type: StreamKind;
+  title: string;
+  startsAt: number;
+  endsAt: number | null;
+}
+
+export type LiveSource = "manual" | "schedule";
+
+export interface CurrentLive {
+  type: StreamKind;
+  title: string;
+  source: LiveSource;
+  slotId?: string;
+}
+
+export type LiveOrder = "idle" | "live";
+
+/** A workstation check as the server receives it (stable ids: camera, micro, network, windows_autologon…). */
+export interface HealthCheck {
+  id: string;
+  ok: boolean;
+  detail: string;
+}
+
+/** Detailed health attached to each heartbeat; the server uses it to e-mail the operators. */
+export interface HealthPayload {
+  checks: HealthCheck[];
+  /** Last error of the broadcast session (kept until the next successful live). */
+  last_error: { code: string; message: string } | null;
+  /** The requested live could not start (set until it has started). */
+  live_start_failure: { message: string } | null;
+}
+
+/** What the device reports about itself on each heartbeat. */
+export interface HeartbeatReport {
+  state: string;
+  version: string;
+  camera: boolean;
+  micro: boolean;
+  /** kbit/s currently being sent. */
+  bitrate: number;
+  health: HealthPayload;
+}
+
+/** New device credential issued by the server after a rotation requested in the console. */
+export interface RotatedCredentials {
+  deviceId: string;
+  deviceSecret: string;
+}
+
+export interface HeartbeatReply {
+  config: Record<string, unknown>;
+  /** Present only when the console requested a rotation: store it and use it right away. */
+  credentials?: RotatedCredentials;
+  schedule: Slot[];
+  command: LiveOrder;
+  current: CurrentLive | null;
+}
 
 export interface StreamMeta {
-  kind: StreamKind;
+  type: StreamKind;
   title: string;
 }
 
+export interface PairingApi {
+  /** `machineName`: computer name, suggested to the console as the device name. */
+  start(baseUrl: string, machineName?: string): Promise<PairingChallenge>;
+  poll(baseUrl: string, deviceCode: string): Promise<PairPoll>;
+}
+
 /**
- * Surface de l'API Sada utilisée par le studio. L'application ne dépend que de cette interface :
- * la forme finale des points d'accès (branche feat/studio-whip-auth) ne touche que `SadaHttpApi`.
+ * Surface of the Sada API used by the device. The server contract is `docs/studio-devices.md` of the sada repository
+ * (single source of truth): the wire format exists only in `SadaHttpApi`; the rest of the application never sees it.
  */
 export interface StudioApi {
-  login(credentials: Credentials): Promise<SessionInfo>;
-  selectMosque(mosqueId: number): Promise<SessionInfo>;
-  logout(): Promise<void>;
-  /** Annonce le type et le titre du direct. Sans effet tant que Sada n'expose pas de point d'accès pour cela. */
-  announce(meta: StreamMeta): Promise<void>;
+  readonly pairing: PairingApi;
+  /** Device identity for subsequent calls; `null` forgets it. */
+  useDevice(device: DeviceCredentials | null): void;
+  heartbeat(report: HeartbeatReport): Promise<HeartbeatReply>;
+  /** Manual live, outside the schedule. 409: a live is already running. */
+  startLive(meta: StreamMeta): Promise<void>;
+  stopLive(): Promise<void>;
+  /** The device leaves the mosque by itself; the server revokes its identity. */
+  unpair(): Promise<void>;
   readonly whip: WhipSignaling;
 }

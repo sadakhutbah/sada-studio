@@ -1,52 +1,73 @@
-# Sada Studio
+<p align="center">
+  <img src="src/renderer/src/assets/sada-mark-or.svg" alt="Sadā" width="96">
+</p>
 
-Application compagnon de [Sada](https://sadakhutbah.org) pour diffuser une khutba ou un dars depuis un ordinateur, sans OBS. Elle capture la caméra et le micro, puis envoie le direct à l'API Sada en WHIP ; Sada le relaie, l'enregistre et le transcrit.
+<h1 align="center">Sadā Studio</h1>
 
-Dépôt privé. Electron + Vite + React + TypeScript, comme le front de Sada (`sada/web`), avec sa charte graphique.
+<p align="center">
+  The broadcasting app of <a href="https://github.com/sadakhutbah/sada">Sadā</a>: a mosque computer with a camera
+  becomes a live stream for the khutba and lessons, with nobody behind it.
+</p>
 
-## Utilisation
+<p align="center">
+  <a href="https://github.com/sadakhutbah/sada-studio/actions/workflows/ci.yml"><img src="https://github.com/sadakhutbah/sada-studio/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-E2C27A" alt="License: AGPL-3.0"></a>
+</p>
 
-1. Entrer l'adresse de l'instance et les identifiants du compte Sada (la connexion peut être mémorisée, chiffrée par le coffre du système).
-2. Choisir la mosquée si le compte en a plusieurs, puis khutba ou dars et le titre.
-3. Choisir caméra et micro, vérifier l'aperçu et le vu-mètre. Les traitements audio automatiques sont désactivés par défaut.
-4. **Démarrer le direct**. En cas de coupure, la reconnexion est automatique.
+<p align="center"><b>English</b> · <a href="README.ar.md">العربية</a></p>
 
-Le compte doit avoir le droit `live` et l'entrée de la mosquée doit être en mode « push ».
+---
 
-## Développement
+Sadā Studio runs on the mosque's computer, next to the camera and the microphone. You pair it once with
+your Sadā instance, then it waits: when the schedule (or someone in the console) starts a live, it
+streams to Sadā, which relays it to Facebook, YouTube or any RTMP destination, records it and prepares
+the transcript and clips. When the live ends, it goes back to standby.
 
-```
+It replaces OBS for mosques that use the hosted version of Sadā: nothing to configure, nothing to start.
+
+## Features
+
+- **Pair with a code**: enter the address of your Sadā instance, type the code shown in the Sadā console.
+  That's all the setup.
+- **Hands-free**: starts with the computer, streams only when Sadā orders a live, prepares the camera
+  shortly before a scheduled slot.
+- **Manual live**: start a khutba, a lesson or a conference outside the schedule, with a title.
+  A scheduled slot never cuts a manual live.
+- **One stream per mosque**: if OBS or another device is already live, Studio is refused; an
+  administrator can take over from the console.
+- **Workstation health**: camera, microphone, sleep, automatic sign-in, Windows Update hours. Each issue
+  comes with its fix, and Sadā e-mails the mosque if something stays broken.
+- **Resilient**: single instance, tray icon, crash recovery, reconnects on its own when the network or
+  the camera comes back.
+- **Automatic updates**, never during a live nor just before a slot.
+
+## Download
+
+Installers for Windows, macOS and Linux are on the [Releases](https://github.com/sadakhutbah/sada-studio/releases)
+page. Studio needs a Sadā instance to pair with: self-hosted ([sada](https://github.com/sadakhutbah/sada))
+or hosted.
+
+## Development
+
+Requires Node.js 22.
+
+```bash
 npm ci
-npm run dev        # application en rechargement à chaud
-npm run mock       # faux serveur Sada (http://127.0.0.1:8787, mot de passe « secret »)
+npm run mock                                          # mock Sadā server on http://127.0.0.1:8787
+SADA_STUDIO_INSTANCE=http://127.0.0.1:8787 npm run dev  # app with hot reload, paired to the mock
 npm run lint && npm run typecheck && npm test
-npm run dist       # installeur du système courant, dans dist/
 ```
 
-Sans caméra (WSL, CI) : `SADA_STUDIO_FAKE_MEDIA=1` simule caméra et micro ; sous Linux sans bac à sable, ajouter `--no-sandbox`.
+Without a camera (WSL, CI), set `SADA_STUDIO_FAKE_MEDIA=1`.
 
-## Architecture
+Layout: `src/core/` (pairing, kiosk state machine, health checks, API client), `src/main/` (window,
+tray, device store, updater), `src/renderer/` (React UI), `scripts/` (mock server, icons), `tests/`.
+The server contract is in [`docs/studio-devices.md`](https://github.com/sadakhutbah/sada/blob/main/docs/studio-devices.md)
+of the Sadā repository.
 
-```
-src/core/       cœur indépendant d'Electron (réutilisable dans la console web)
-  session/      machine d'état (idle, connexion, direct, reconnexion, erreur, arrêt) + BroadcastSession
-  sources/      Strategy de source : caméra ; registre pour le partage d'écran
-  transport/    Strategy de transport : WHIP ; SRT s'y ajoutera
-  api/          interface StudioApi + client HTTP de la console Sada
-  audio/        vu-mètre ; stats.ts : débit et durée
-  extension-points.ts   mixage audio et scènes (types seulement, non implémentés)
-src/main/       processus principal : fenêtre, IPC, coffre safeStorage, client API
-src/preload/    pont `window.studio`
-src/renderer/   interface React
-tests/          machine d'état, session, client WHIP contre un serveur simulé
-```
+Building installers and publishing updates: [`docs/releasing.md`](docs/releasing.md).
 
-Le client Sada tourne dans le processus principal : cookies et mot de passe n'arrivent jamais à l'interface. La signalisation WHIP passe par `POST /api/v1/live/studio/whip` (session + `X-CSRF`) ; elle est isolée derrière `StudioApi`/`WhipSignaling` pour suivre la forme finale des points d'accès de la branche `feat/studio-whip-auth` de Sada.
+## License
 
-## Intégration continue et installeurs
-
-`.github/workflows/ci.yml` : lint, typecheck, tests et build à chaque push et pull request. Sur un tag `vX.Y.Z`, construction des installeurs Windows (NSIS) et macOS (dmg, zip) en artefacts du workflow.
-
-## Signature
-
-Les installeurs ne sont **pas signés** pour l'instant : Windows SmartScreen et macOS Gatekeeper afficheront un avertissement (macOS : clic droit puis Ouvrir). Pour signer : certificat Authenticode (`CSC_LINK`, `CSC_KEY_PASSWORD`) côté Windows ; Developer ID et notarisation Apple (`CSC_LINK`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`) côté macOS, puis retirer `identity: null` dans `electron-builder.yml`.
+[GNU AGPL-3.0](LICENSE), like Sadā. You may use, modify and redistribute Studio; if you distribute a
+modified version, its source code must be published under the same license.

@@ -1,21 +1,28 @@
+import type { ErrorCode } from "../errors";
+
 /**
- * Machine d'état de la session de diffusion. Fonction pure : (état, évènement) → état.
- * Aucun effet de bord ici ; c'est `BroadcastSession` qui pilote la capture et le transport.
+ * State machine of the broadcast session. Pure function: (state, event) → state.
+ * No side effects here; `BroadcastSession` drives the capture and the transport.
  *
  *   idle ──START──▶ connecting ──CONNECTED──▶ live ◀──CONNECTED── reconnecting
  *                      │                       │  ──CONNECTION_LOST──▶  │ ▲
  *                      │                       │                        │ └ RETRY_FAILED (attempt+1)
- *   STOP depuis connecting / live / reconnecting ──▶ stopping ──STOPPED──▶ idle
- *   FATAL (ou trop d'échecs) ──▶ error ──RESET | START──▶ idle | connecting
+ *   STOP from connecting / live / reconnecting ──▶ stopping ──STOPPED──▶ idle
+ *   FATAL (or too many failures) ──▶ error ──RESET | START──▶ idle | connecting
+ *
+ * Server-driven control (pairing, standby, arming, live/idle order, manual live) lives in
+ * `core/kiosk/machine.ts`: this machine only knows about the link with the relay.
  */
 export type SessionStatus = "idle" | "connecting" | "live" | "reconnecting" | "error" | "stopping";
 
 export interface SessionState {
   readonly status: SessionStatus;
-  /** Tentatives de reconnexion consécutives (0 hors reconnexion). */
+  /** Consecutive reconnection attempts (0 when not reconnecting). */
   readonly attempt: number;
   readonly error: string | null;
-  /** Début du direct (ms, horloge de l'appelant) ; conservé pendant une reconnexion. */
+  /** `conflict`: another live occupies the mosque (retry later, without insisting). */
+  readonly errorCode: ErrorCode | null;
+  /** Start of the live (ms, caller's clock); kept during a reconnection. */
   readonly startedAt: number | null;
 }
 
@@ -24,39 +31,40 @@ export type SessionEvent =
   | { type: "CONNECTED"; at: number }
   | { type: "CONNECTION_LOST"; reason: string }
   | { type: "RETRY_FAILED"; reason: string }
-  | { type: "FATAL"; reason: string }
+  | { type: "FATAL"; reason: string; code?: ErrorCode }
   | { type: "STOP" }
   | { type: "STOPPED" }
   | { type: "RESET" };
 
 export interface MachineOptions {
-  /** Échecs de reconnexion tolérés avant de passer en erreur. */
+  /** Reconnection failures tolerated before switching to error. */
   maxAttempts: number;
 }
 
-export const INITIAL_STATE: SessionState = { status: "idle", attempt: 0, error: null, startedAt: null };
+export const INITIAL_STATE: SessionState = { status: "idle", attempt: 0, error: null, errorCode: null, startedAt: null };
 
 const state = (status: SessionStatus, over: Partial<SessionState> = {}): SessionState => ({
   status,
   attempt: 0,
   error: null,
+  errorCode: null,
   startedAt: null,
   ...over,
 });
 
-/** Évènement non permis dans l'état courant : l'état est rendu tel quel (même référence). */
+/** Event not allowed in the current state: the state is returned as is (same reference). */
 export function transition(s: SessionState, e: SessionEvent, opts: MachineOptions): SessionState {
   switch (s.status) {
     case "idle":
       return e.type === "START" ? state("connecting") : s;
     case "connecting":
       if (e.type === "CONNECTED") return state("live", { startedAt: e.at });
-      if (e.type === "FATAL") return state("error", { error: e.reason });
+      if (e.type === "FATAL") return state("error", { error: e.reason, errorCode: e.type === "FATAL" ? (e.code ?? null) : null });
       if (e.type === "STOP") return state("stopping");
       return s;
     case "live":
       if (e.type === "CONNECTION_LOST") return state("reconnecting", { attempt: 1, error: e.reason, startedAt: s.startedAt });
-      if (e.type === "FATAL") return state("error", { error: e.reason });
+      if (e.type === "FATAL") return state("error", { error: e.reason, errorCode: e.type === "FATAL" ? (e.code ?? null) : null });
       if (e.type === "STOP") return state("stopping");
       return s;
     case "reconnecting":
@@ -66,7 +74,7 @@ export function transition(s: SessionState, e: SessionEvent, opts: MachineOption
           ? state("error", { error: e.reason })
           : { ...s, attempt: s.attempt + 1, error: e.reason };
       }
-      if (e.type === "FATAL") return state("error", { error: e.reason });
+      if (e.type === "FATAL") return state("error", { error: e.reason, errorCode: e.type === "FATAL" ? (e.code ?? null) : null });
       if (e.type === "STOP") return state("stopping");
       return s;
     case "stopping":
@@ -81,7 +89,7 @@ export function transition(s: SessionState, e: SessionEvent, opts: MachineOption
 export const isActive = (s: SessionState) => s.status === "connecting" || s.status === "live" || s.status === "reconnecting";
 export const canStart = (s: SessionState) => s.status === "idle" || s.status === "error";
 
-/** Conteneur d'état observable autour de `transition`. */
+/** Observable state container around `transition`. */
 export class SessionMachine {
   private current = INITIAL_STATE;
   private readonly listeners = new Set<(s: SessionState) => void>();

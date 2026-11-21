@@ -10,62 +10,32 @@ beforeEach(async () => {
 });
 afterEach(() => mock.close());
 
-const creds = (over = {}) => ({ baseUrl: "", username: "imam", password: "secret", ...over });
-
-async function signedIn() {
+/** Full pairing against the fake server, then a client ready to broadcast. */
+async function paired() {
   const api = new SadaHttpApi();
-  await api.login(creds({ baseUrl: mock.url }));
-  await api.selectMosque(1);
-  return api;
+  const c = await api.pairing.start(mock.url);
+  mock.approve();
+  const p = await api.pairing.poll(mock.url, c.deviceCode);
+  if (p.status !== "paired") throw new Error("pairing expected");
+  api.useDevice({ baseUrl: mock.url, deviceId: p.deviceId, deviceSecret: p.deviceSecret, mosque: p.mosque });
+  mock.setLive({ type: "khutba", title: "Live" }); // the server orders the live: without an order, WHIP answers 409 not_ordered
+  return { api, secret: p.deviceSecret };
 }
 
-describe("client API Sada (serveur simulé)", () => {
-  it("se connecte avec le défi anti-rejeu, puis choisit la mosquée", async () => {
-    const api = new SadaHttpApi();
-    const s = await api.login(creds({ baseUrl: mock.url }));
-    expect(s.mosques.map((m) => m.slug)).toEqual(["alpha", "beta"]);
-    const login = mock.requests.find((r) => r.url === "/api/v1/login")!;
-    expect(login.headers.cookie).toContain("sada_pre=pre123");
-    expect(new URLSearchParams(login.body).get("pre")).toBe("pre123");
-    const chosen = await api.selectMosque(1);
-    expect(chosen.mosque?.id).toBe(1);
-    const sel = mock.requests.find((r) => r.url === "/api/v1/mosques/select")!;
-    expect(sel.headers["x-csrf"]).toBe("csrf-tok1");
-    expect(sel.headers.cookie).toContain("sada_session=tok1");
-  });
-
-  it("traduit un mauvais mot de passe", async () => {
-    await expect(new SadaHttpApi().login(creds({ baseUrl: mock.url, password: "non" }))).rejects.toMatchObject({
-      status: 401,
-      message: "Identifiant ou mot de passe incorrect.",
-    });
-  });
-
-  it("signale un serveur injoignable", async () => {
-    await expect(new SadaHttpApi().login(creds({ baseUrl: "http://127.0.0.1:1" }))).rejects.toMatchObject({ status: 0 });
-  });
-
-  it("exige https hors du local", () => {
-    expect(() => normalizeBaseUrl("http://console.example.org")).toThrow(/https/);
-    expect(normalizeBaseUrl("console.sadakhutbah.org/")).toBe("https://console.sadakhutbah.org");
-    expect(normalizeBaseUrl("http://localhost:8080/x")).toBe("http://localhost:8080");
-  });
-});
-
-describe("signalisation WHIP", () => {
-  it("POST de l'offre en application/sdp avec cookie et X-CSRF, lit Location", async () => {
-    const api = await signedIn();
+describe("WHIP signaling (device secret)", () => {
+  it("POSTs the offer as application/sdp with Bearer, reads Location", async () => {
+    const { api, secret } = await paired();
     const r = await api.whip.offer("v=0\r\noffer\r\n");
     expect(r).toEqual({ answer: "v=0\r\nanswer\r\n", resource: "/api/v1/live/studio/whip/sess-1" });
     const req = mock.requests.at(-1)!;
     expect(req).toMatchObject({ method: "POST", url: "/api/v1/live/studio/whip", body: "v=0\r\noffer\r\n" });
     expect(req.headers["content-type"]).toBe("application/sdp");
-    expect(req.headers["x-csrf"]).toBeTruthy();
-    expect(req.headers.cookie).toContain("sada_session=");
+    expect(req.headers.authorization).toBe(`Bearer ${secret}`);
+    expect(req.headers.cookie).toBeUndefined();
   });
 
-  it("PATCH ICE et DELETE sur la ressource", async () => {
-    const api = await signedIn();
+  it("PATCH ICE and DELETE on the resource", async () => {
+    const { api } = await paired();
     await api.whip.patchIce("/api/v1/live/studio/whip/sess-1", "a=candidate:1\r\n");
     await api.whip.close("/api/v1/live/studio/whip/sess-1");
     const [patch, del] = mock.requests.slice(-2);
@@ -74,26 +44,16 @@ describe("signalisation WHIP", () => {
     expect(del.method).toBe("DELETE");
   });
 
-  it("se reconnecte en silence quand la session a expiré, puis rejoue l'appel", async () => {
-    const api = await signedIn();
-    mock.expireSessionOnce();
-    const r = await api.whip.offer("sdp");
-    expect(r.resource).toContain("sess-1");
-    const logins = mock.requests.filter((q) => q.url === "/api/v1/login").length;
-    expect(logins).toBe(2);
-    // la mosquée choisie est rouverte après la reconnexion
-    expect(mock.requests.filter((q) => q.url === "/api/v1/mosques/select")).toHaveLength(2);
+  it("refuses a Location outside the instance: the secret never goes elsewhere", async () => {
+    const bad = new SadaHttpApi({ fetch: async () => new Response("x", { status: 201, headers: { location: "https://evil.example/whip/1" } }) });
+    bad.useDevice({ baseUrl: mock.url, deviceId: "d", deviceSecret: "s", mosque: { name: "M" } });
+    await expect(bad.whip.offer("sdp")).rejects.toMatchObject({ status: 502 });
   });
 
-  it("refuse un Location hors de l'instance", async () => {
-    const api = await signedIn();
-    const bad = new SadaHttpApi({
-      fetch: async () => new Response("x", { status: 201, headers: { location: "https://evil.example/whip/1" } }),
-    });
-    // simule une session déjà ouverte sur cette instance
-    (bad as unknown as { baseUrl: string }).baseUrl = mock.url;
-    await expect(bad.whip.offer("sdp")).rejects.toMatchObject({ status: 502 });
-    expect(api).toBeDefined();
+  it("revoked device: 401 becomes DeviceRevokedError", async () => {
+    const { api } = await paired();
+    mock.revokeAll();
+    await expect(api.whip.offer("sdp")).rejects.toMatchObject({ name: "DeviceRevokedError" });
   });
 });
 
@@ -101,8 +61,8 @@ describe("WhipTransport", () => {
   const transportWith = (api: SadaHttpApi, peer: FakePeer, extra = {}) =>
     new WhipTransport({ signaling: api.whip, createPeer: () => peer as unknown as RTCPeerConnection, disconnectGraceMs: 50, ...extra });
 
-  it("négocie contre le serveur simulé et rend les statistiques", async () => {
-    const api = await signedIn();
+  it("negotiates against the simulated server and returns the statistics", async () => {
+    const { api } = await paired();
     const peer = new FakePeer();
     const t = transportWith(api, peer);
     await t.connect(fakeStream());
@@ -114,8 +74,8 @@ describe("WhipTransport", () => {
     expect(mock.requests.at(-1)).toMatchObject({ method: "DELETE", url: "/api/v1/live/studio/whip/sess-1" });
   });
 
-  it("signale la perte quand la liaison échoue", async () => {
-    const api = await signedIn();
+  it("reports the loss when the link fails", async () => {
+    const { api } = await paired();
     const peer = new FakePeer();
     const t = transportWith(api, peer);
     const lost = new Promise<string>((r) => t.onLost(r));
@@ -124,8 +84,8 @@ describe("WhipTransport", () => {
     await expect(lost).resolves.toMatch(/perdue/);
   });
 
-  it("tolère une coupure brève (« disconnected » qui revient)", async () => {
-    const api = await signedIn();
+  it("tolerates a brief drop (disconnected, then back)", async () => {
+    const { api } = await paired();
     const peer = new FakePeer();
     const t = transportWith(api, peer);
     let fired = false;
@@ -137,20 +97,31 @@ describe("WhipTransport", () => {
     expect(fired).toBe(false);
   });
 
-  it("traduit 409 (entrée non « push ») en erreur fatale", async () => {
-    const api = await signedIn();
+  it("translates 409 into a conflict: fatal for this attempt, with the time of the running live", async () => {
+    const { api } = await paired();
     mock.whipStatus = 409;
     const t = transportWith(api, new FakePeer());
-    await expect(t.connect(fakeStream())).rejects.toBeInstanceOf(FatalError);
+    const err = await t.connect(fakeStream()).catch((e) => e);
+    expect(err).toBeInstanceOf(FatalError);
+    expect(err.code).toBe("conflict");
+    expect(err.message).toMatch(/^A live is already running since \d\d:\d\d\.$/);
   });
 
-  it("une erreur réseau reste réessayable", async () => {
-    const api = await signedIn();
+  it("a network error remains retryable", async () => {
+    const { api } = await paired();
     await mock.close();
     const t = transportWith(api, new FakePeer());
     const err = await t.connect(fakeStream()).catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err).not.toBeInstanceOf(FatalError);
-    mock = await (await import("./helpers")).startMockSada();
+    mock = await startMockSada();
+  });
+});
+
+describe("instance address", () => {
+  it("requires https outside local", () => {
+    expect(() => normalizeBaseUrl("http://console.example.org")).toThrow(/https/);
+    expect(normalizeBaseUrl("console.sadakhutbah.org/")).toBe("https://console.sadakhutbah.org");
+    expect(normalizeBaseUrl("http://localhost:8080/x")).toBe("http://localhost:8080");
   });
 });

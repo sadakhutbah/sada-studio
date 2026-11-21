@@ -1,27 +1,283 @@
-// Faux serveur Sada pour essayer l'interface sans instance : `npm run mock`, puis
-// adresse http://127.0.0.1:8787, identifiant libre, mot de passe « secret ».
-// Le point WHIP répond 409 : il n'existe aucun relais derrière.
+// Fake Sada server, mirroring the contract `docs/studio-devices.md` of the sada repository (single source of truth): same routes, same
+// bodies, same codes (401 invalid/revoked, 404/410 for pairing, 409 live_active with `since`, 422 bad_type), same
+// order logic (live from "start − margin", manual live never cut by a slot, manual stop of a slot
+// without restart). `npm run mock`, then enter http://127.0.0.1:8787 as the address in the application.
+// The pairing code is printed here; it is accepted automatically after APPROVE_AFTER_MS (8 s by default), or by hand:
+//   curl -X POST 'http://127.0.0.1:8787/__mock/approve'
+// Manual control (outside the contract): /__mock/live?type=khutba&title=… , /__mock/idle , /__mock/revoke ,
+// /__mock/conflict?on=1 , /__mock/rotate . The same engine serves the tests (tests/helpers.ts).
 import { createServer } from "node:http";
+import { pathToFileURL } from "node:url";
 
-const port = Number(process.env.PORT ?? 8787);
-const user = { id: 1, name: "Imam Démo", role: "admin", role_label: "Administrateur", permissions: ["live"] };
-const mosque = { id: 1, slug: "demo", name: "Mosquée de démonstration", access: "member" };
+const MOSQUE = { name: "Alpha Mosque", slug: "alpha" };
+const TYPES = ["khutba", "dars", "conference"];
+const MARGIN_S = 120;
 
-createServer((req, res) => {
-  const send = (status, data, headers = {}) => {
-    res.writeHead(status, { "content-type": "application/json", ...headers });
-    res.end(JSON.stringify(data));
+/** Next Friday 13:15 (local time), at least one hour ahead. */
+export function nextFriday(now = Date.now()) {
+  const d = new Date(now);
+  d.setHours(13, 15, 0, 0);
+  while (d.getDay() !== 5 || d.getTime() < now + 3600_000) d.setDate(d.getDate() + 1);
+  return d.getTime();
+}
+
+const iso = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+const newSecret = (id) => `${id}.${Math.random().toString(36).slice(2, 12)}${Math.random().toString(36).slice(2, 12)}`;
+
+export async function createMockSada({ port = 0, approveAfterMs = null, codeTtlS = 600, log = false } = {}) {
+  const requests = [];
+  let seq = 0;
+  const pairings = new Map(); // device_code -> { userCode, name, expiresAt, approved, deviceId }
+  const devices = new Map(); // id -> { id, secret, prevSecret, name, revoked, spoke, rotate }
+  const mock = {
+    url: "",
+    requests,
+    /** Slots: { slot_id, type, title, starts_at, ends_at } (ISO UTC). */
+    schedule: [],
+    /** Running manual live: { type, title, startedAt, deviceId } or null. */
+    manual: null,
+    /** Slots stopped by hand (no restart). */
+    stopped: new Set(),
+    /** Forced status of the WHIP offer (e.g. 409: another publisher). */
+    whipStatus: null,
+    /** The next n heartbeats answer with this status (e.g. 500). */
+    failHeartbeats: 0,
+    heartbeatInterval: 30,
+    /** Another publisher (OBS…) has held the stream since `since`. */
+    otherPublisher: false,
+    since: new Date(Date.now() - 12 * 60_000).toISOString(),
+    /** Server clock (for tests). */
+    now: () => Date.now(),
+    heartbeats: () => requests.filter((r) => r.url === "/api/v1/studio/heartbeat").map((r) => JSON.parse(r.body || "{}")),
+    /** Code entry in the console: with no argument, all pending codes. */
+    approve(userCode) {
+      for (const [, p] of pairings) if (!userCode || p.userCode === userCode) p.approved = true;
+    },
+    revokeAll() {
+      for (const d of devices.values()) d.revoked = true;
+    },
+    /** The console requests a rotation: the next heartbeat brings a new secret. */
+    rotateAll() {
+      for (const d of devices.values()) d.rotate = true;
+    },
+    get devices() {
+      return [...devices.values()];
+    },
+    /** Manual live (like `live/start`) or forced running slot, for tests. */
+    setLive({ type = "khutba", title = "Live", source = "manual" } = {}) {
+      if (source === "manual") mock.manual = { type, title, startedAt: mock.now(), deviceId: null };
+      else {
+        const t = mock.now();
+        mock.schedule = [{ slot_id: `forced@${t}`, type, title, starts_at: iso(t - 60_000), ends_at: iso(t + 3600_000) }, ...mock.schedule];
+      }
+    },
+    setIdle() {
+      mock.manual = null;
+      mock.stopped = new Set(order().running.map((s) => s.slot_id));
+    },
+    get command() {
+      return order().command;
+    },
+    get current() {
+      return order().current;
+    },
+    close: () => new Promise((r) => (server.closeAllConnections?.(), server.close(() => r()))),
   };
-  let body = "";
-  req.on("data", (c) => (body += c));
-  req.on("end", () => {
-    if (req.url === "/api/v1/login-challenge") return send(200, { pre: "demo" }, { "set-cookie": "sada_pre=demo; Path=/" });
-    if (req.url === "/api/v1/login") {
-      if (new URLSearchParams(body).get("password") !== "secret") return send(401, { error: "identifiants" });
-      return send(200, { user, mosque, mosques: [mosque], csrf: "demo" }, { "set-cookie": "sada_session=demo; Path=/" });
+
+  const slotView = (s) => ({ ...s, starts_in_s: Math.round((Date.parse(s.starts_at) - mock.now()) / 1000) });
+
+  /** The server order (studio_plan.decide): manual > slot (from start − margin to end) > rest. */
+  function order() {
+    const now = mock.now();
+    const slots = [...mock.schedule].sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at)).filter((s) => Date.parse(s.ends_at) > now);
+    const running = slots.filter((s) => Date.parse(s.starts_at) - MARGIN_S * 1000 <= now && !mock.stopped.has(s.slot_id));
+    const upcoming = slots.filter((s) => Date.parse(s.starts_at) - MARGIN_S * 1000 > now);
+    const next = upcoming[0] ?? null;
+    const base = { next: next && slotView(next), slots: upcoming.slice(0, 5).map(slotView), running };
+    if (mock.manual) {
+      const m = mock.manual;
+      return {
+        command: "live",
+        reason_code: "manual",
+        reason: "A live started from the device is in progress.",
+        current: { source: "manual", slot_id: null, type: m.type, title: m.title, starts_at: iso(m.startedAt), ends_at: null, starts_in_s: Math.round((m.startedAt - now) / 1000) },
+        ...base,
+      };
     }
-    if (req.url === "/api/v1/mosques/select") return send(200, { user, mosque, mosques: [mosque], csrf: "demo" });
-    if (req.url?.startsWith("/api/v1/live/studio/whip")) return send(409, { error: "input is not push" });
-    send(404, { error: "not found" });
+    if (running.length) {
+      return { command: "live", reason_code: "slot", reason: "A live is planned: start broadcasting.", current: { source: "schedule", ...slotView(running[0]) }, ...base };
+    }
+    const wasStopped = slots.some((s) => mock.stopped.has(s.slot_id) && Date.parse(s.starts_at) - MARGIN_S * 1000 <= now);
+    return {
+      command: "standby",
+      reason_code: wasStopped ? "slot_stopped" : "idle",
+      reason: wasStopped ? "This live was stopped by hand; it will not restart by itself." : "No live planned for now.",
+      current: null,
+      ...base,
+    };
+  }
+  const answer = () => {
+    const { running: _running, ...o } = order();
+    return o;
+  };
+
+  const conflict = () => ({
+    error: "A live is already running from the mosque's OBS stream key.",
+    code: "live_active",
+    since: mock.since,
+    source: { kind: "obs", label: "", since: Date.parse(mock.since) / 1000 },
   });
-}).listen(port, "127.0.0.1", () => console.log(`Faux Sada sur http://127.0.0.1:${port}`));
+
+  const server = createServer(async (req, res) => {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const body = Buffer.concat(chunks).toString();
+    const url = new URL(req.url ?? "/", "http://x");
+    const path = url.pathname;
+    requests.push({ method: req.method ?? "", url: path, headers: req.headers, body });
+    const json = (status, data, extra = {}) => {
+      res.writeHead(status, { "content-type": "application/json", ...extra });
+      res.end(JSON.stringify(data));
+    };
+    const parsed = () => {
+      try {
+        return JSON.parse(body || "{}");
+      } catch {
+        return {};
+      }
+    };
+
+    // Helpers for the tester (outside the contract).
+    if (path === "/__mock/approve") return mock.approve(url.searchParams.get("code") ?? undefined), json(200, { ok: true });
+    if (path === "/__mock/revoke") return mock.revokeAll(), json(200, { ok: true });
+    if (path === "/__mock/rotate") return mock.rotateAll(), json(200, { ok: true });
+    if (path === "/__mock/idle") return mock.setIdle(), json(200, { ok: true });
+    if (path === "/__mock/live") {
+      mock.setLive({ type: url.searchParams.get("type") ?? "khutba", title: url.searchParams.get("title") ?? "Live", source: "manual" });
+      return json(200, { ok: true });
+    }
+    if (path === "/__mock/conflict") return (mock.whipStatus = url.searchParams.get("on") === "0" ? null : 409), json(200, { ok: true });
+
+    // ── Appairage (public) ──
+    if (path === "/api/v1/studio/pair/start" && req.method === "POST") {
+      const n = ++seq;
+      const device_code = `dc-${n}-${Math.random().toString(36).slice(2, 12)}`;
+      const user_code = n === 1 ? "K7QM-4TZ2" : `K7Q${n}-4TZ2`;
+      const name = String(parsed().name ?? "").trim().slice(0, 60);
+      pairings.set(device_code, { userCode: user_code, name, expiresAt: Date.now() + codeTtlS * 1000, approved: false, deviceId: null });
+      if (log) console.log(`Pairing code: ${user_code}${name ? ` (machine "${name}")` : ""}`);
+      if (approveAfterMs !== null) setTimeout(() => (pairings.get(device_code).approved = true), approveAfterMs);
+      return json(200, { device_code, user_code, expires_in: codeTtlS, interval: 5 });
+    }
+    if (path === "/api/v1/studio/pair/poll" && req.method === "POST") {
+      const p = pairings.get(parsed().device_code);
+      if (!p) return json(404, { status: "unknown", message: "Unknown pairing: start again." });
+      if (!p.approved) {
+        if (Date.now() > p.expiresAt) return json(410, { status: "expired", message: "The code has expired: start the pairing again." });
+        return json(200, { status: "pending", interval: 5, expires_in: Math.max(0, Math.round((p.expiresAt - Date.now()) / 1000)) });
+      }
+      let d = p.deviceId ? devices.get(p.deviceId) : null;
+      if (!d) {
+        const id = `sdev_${++seq}`;
+        d = { id, secret: "", prevSecret: "", name: p.name || "Appareil", revoked: false, spoke: false, rotate: false };
+        devices.set(id, d);
+        p.deviceId = id;
+      }
+      if (d.revoked) return json(410, { status: "revoked", message: "This device has been revoked." });
+      if (d.spoke) return json(410, { status: "claimed", message: "This pairing was already completed." });
+      d.secret = newSecret(d.id); // a never-used secret (lost response) is replaced
+      return json(200, { status: "approved", device_id: d.id, device_secret: d.secret, name: d.name, mosque: MOSQUE });
+    }
+
+    // ── Device routes: bearer credential ──
+    const bearer = /^Bearer (sdev_\d+\.\S+)$/.exec(req.headers.authorization ?? "")?.[1] ?? "";
+    const dev = [...devices.values()].find((d) => d.secret === bearer || (d.prevSecret && d.prevSecret === bearer));
+    if (path.startsWith("/api/v1/studio/") || path.startsWith("/api/v1/live/studio/")) {
+      if (!dev) return json(401, { error: "device credential unknown", code: "invalid" });
+      if (dev.revoked) return json(401, { error: "this device has been revoked by the mosque", code: "revoked" });
+      dev.spoke = true;
+    }
+
+    if (path === "/api/v1/studio/heartbeat" && req.method === "POST") {
+      if (mock.failHeartbeats > 0) return mock.failHeartbeats--, json(500, { error: "panne" });
+      const out = {
+        server_time: iso(mock.now()),
+        ...answer(),
+        config: {
+          name: dev.name,
+          mosque: { ...MOSQUE, timezone: "Europe/Paris" },
+          heartbeat_interval_s: mock.heartbeatInterval,
+          start_margin_s: MARGIN_S,
+          token_path: "/api/v1/live/studio/token",
+          whip_path: "/api/v1/live/studio/whip",
+        },
+      };
+      if (dev.rotate) {
+        dev.prevSecret = dev.secret;
+        dev.secret = newSecret(dev.id);
+        dev.rotate = false;
+        out.credentials = { device_id: dev.id, device_secret: dev.secret };
+      } else if (dev.prevSecret && bearer === dev.secret) dev.prevSecret = ""; // the new secret is adopted
+      return json(200, out);
+    }
+    if (path === "/api/v1/studio/live/start" && req.method === "POST") {
+      const { type, title } = parsed();
+      if (!TYPES.includes(String(type ?? "").toLowerCase())) return json(422, { error: "Unknown type: choose khutba, dars or conference.", code: "bad_type" });
+      if (mock.otherPublisher || (mock.manual && mock.manual.deviceId !== dev.id)) return json(409, conflict());
+      const t = String(title ?? "").trim().slice(0, 200);
+      if (mock.manual) Object.assign(mock.manual, { type, title: t });
+      else mock.manual = { type, title: t, startedAt: mock.now(), deviceId: dev.id };
+      return json(200, answer());
+    }
+    if (path === "/api/v1/studio/live/stop" && req.method === "POST") {
+      const stopped = [];
+      if (mock.manual) {
+        mock.manual = null;
+        stopped.push("manual");
+      }
+      const running = order().running;
+      if (running.length) {
+        for (const s of running) mock.stopped.add(s.slot_id);
+        stopped.push("slot");
+      }
+      return json(200, { stopped, ...answer() });
+    }
+    if (path === "/api/v1/studio/live/announce" && req.method === "POST") {
+      const { type, title } = parsed();
+      if (!TYPES.includes(String(type ?? "").toLowerCase())) return json(422, { error: "Unknown type: choose khutba, dars or conference.", code: "bad_type" });
+      if (answer().command !== "live") return json(409, { error: "No live is in progress to announce.", code: "no_live" });
+      if (mock.manual) Object.assign(mock.manual, { type, title });
+      return json(200, answer());
+    }
+    if (path === "/api/v1/studio/unpair" && req.method === "POST") {
+      dev.revoked = true;
+      if (mock.manual?.deviceId === dev.id) mock.manual = null;
+      return json(200, { unpaired: true, stream_cut: false });
+    }
+    if (path === "/api/v1/live/studio/whip" && req.method === "POST") {
+      if (mock.whipStatus === 409 || mock.otherPublisher) return json(409, conflict());
+      if (mock.whipStatus) return json(mock.whipStatus, { error: "refus", code: "refused" });
+      if (answer().command !== "live") return json(409, { error: "This device is not ordered to broadcast.", code: "not_ordered" });
+      res.writeHead(201, { "content-type": "application/sdp", location: "/api/v1/live/studio/whip/sess-1" });
+      return res.end("v=0\r\nanswer\r\n");
+    }
+    if (path === "/api/v1/live/studio/whip/sess-1") {
+      res.writeHead(req.method === "DELETE" ? 200 : 204);
+      return res.end();
+    }
+    json(404, { error: "not found" });
+  });
+  await new Promise((r) => server.listen(port, "127.0.0.1", r));
+  mock.url = `http://127.0.0.1:${server.address().port}`;
+  return mock;
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  const mock = await createMockSada({ port: Number(process.env.PORT ?? 8787), approveAfterMs: Number(process.env.APPROVE_AFTER_MS ?? 8000), log: true });
+  const t = nextFriday();
+  mock.schedule = [
+    { slot_id: "jumua-0@khutba", type: "khutba", title: "Khutba du vendredi", starts_at: iso(t), ends_at: iso(t + 45 * 60_000) },
+    { slot_id: "dars-1@isha", type: "dars", title: "Dars after Isha", starts_at: iso(t + 6 * 3600_000), ends_at: iso(t + 7 * 3600_000) },
+  ];
+  console.log(`Faux Sada sur ${mock.url}`);
+}

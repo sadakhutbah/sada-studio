@@ -1,21 +1,21 @@
 /**
- * Points d'extension prévus, volontairement non implémentés dans cette version.
- * Ils fixent la forme que prendront ces fonctions pour que la session n'ait pas à changer.
+ * Planned extension points, deliberately not implemented in this version.
+ * They fix the shape these features will take so the session does not have to change.
  */
 
-/** Mixage audio (plusieurs micros, musique, retour) : s'intercale entre les sources et le transport. */
+/** Audio mixing (several microphones, music, return feed): sits between the sources and the transport. */
 export interface AudioMixer {
-  /** Combine des flux audio en une piste unique envoyée au transport. */
+  /** Combines audio streams into a single track sent to the transport. */
   mix(inputs: MediaStream[]): MediaStream;
   dispose(): void;
 }
 
-/** Scènes (cadrage, bandeau, plusieurs sources) : produit le flux vidéo final. */
+/** Scenes (framing, banner, several sources): produces the final video stream. */
 export interface SceneCompositor {
   readonly sceneId: string;
   compose(inputs: MediaStream[]): MediaStream;
   dispose(): void;
 }
 
-// Partage d'écran : une `MediaSourceStrategy` d'identifiant « screen », à enregistrer dans `SourceRegistry`.
-// Transport SRT : un `Transport` de `kind` « srt », fourni à `BroadcastSession` par sa `TransportFactory`.
+// Screen sharing: a `MediaSourceStrategy` with id "screen", to register in `SourceRegistry`.
+// SRT transport: a `Transport` of `kind` "srt", provided to `BroadcastSession` by its `TransportFactory`.

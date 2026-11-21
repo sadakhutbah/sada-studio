@@ -1,4 +1,5 @@
 import { FatalError } from "../errors";
+import { t } from "../messages";
 import { BitrateEstimator } from "../stats";
 import type { MediaSourceStrategy, SourceOptions } from "../sources/types";
 import type { ConnectOptions, Transport, TransportFactory, TransportStats } from "../transport/types";
@@ -7,9 +8,9 @@ import { SessionMachine, canStart, type SessionState } from "./machine";
 export interface SessionDeps {
   source: MediaSourceStrategy;
   transportFactory: TransportFactory;
-  /** Horloge (ms) ; injectable pour les tests. */
+  /** Clock (ms); injectable for tests. */
   now?: () => number;
-  /** Attente avant la n-ième tentative de reconnexion (ms). */
+  /** Delay before the n-th reconnection attempt (ms). */
   backoffMs?: (attempt: number) => number;
   maxAttempts?: number;
   statsIntervalMs?: number;
@@ -31,9 +32,9 @@ export interface SessionSnapshot {
 export const defaultBackoff = (attempt: number) => Math.min(15_000, 1000 * 2 ** (attempt - 1));
 
 /**
- * Orchestre une diffusion : machine d'état + stratégie de source + stratégie de transport.
- * Reconnexion automatique : le flux capturé est conservé, seule la liaison est refaite.
- * La session ne libère jamais la source : l'aperçu continue après l'arrêt (c'est au propriétaire de `release`).
+ * Orchestrates a broadcast: state machine + source strategy + transport strategy.
+ * Automatic reconnection: the captured stream is kept, only the link is rebuilt.
+ * The session never releases the source: the preview continues after the stop (the owner calls `release`).
  */
 export class BroadcastSession {
   private readonly machine: SessionMachine;
@@ -47,7 +48,7 @@ export class BroadcastSession {
   private readonly bitrate = new BitrateEstimator();
   private stats: LiveStats = { bitrateKbps: 0 };
   private offEnded: (() => void) | null = null;
-  /** Incrémenté à chaque start/stop : une réponse tardive d'une génération révolue est ignorée. */
+  /** Incremented on each start/stop: a late response from a past generation is ignored. */
   private generation = 0;
 
   constructor(private readonly deps: SessionDeps) {
@@ -75,7 +76,7 @@ export class BroadcastSession {
       if (gen !== this.generation) return;
       this.stream = stream;
       this.offEnded?.();
-      this.offEnded = this.deps.source.onEnded(() => this.fail("La caméra ou le micro a été déconnecté."));
+      this.offEnded = this.deps.source.onEnded(() => this.fail(t("session.deviceLost")));
       await this.openTransport(stream);
       if (gen !== this.generation) return;
       this.machine.send({ type: "CONNECTED", at: this.now() });
@@ -83,7 +84,7 @@ export class BroadcastSession {
     } catch (e) {
       if (gen !== this.generation) return;
       await this.teardown();
-      this.machine.send({ type: "FATAL", reason: messageOf(e) });
+      this.machine.send({ type: "FATAL", reason: messageOf(e), code: e instanceof FatalError ? e.code : undefined });
     }
   }
 
@@ -132,7 +133,7 @@ export class BroadcastSession {
       if (gen !== this.generation) return;
       if (e instanceof FatalError) {
         await this.teardown();
-        this.machine.send({ type: "FATAL", reason: e.message });
+        this.machine.send({ type: "FATAL", reason: e.message, code: e.code });
         return;
       }
       this.machine.send({ type: "RETRY_FAILED", reason: messageOf(e) });
