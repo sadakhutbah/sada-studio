@@ -1,9 +1,10 @@
 import { FatalError } from "../errors";
+import { t } from "../messages";
 import type { MediaSourceStrategy, SourceOptions } from "./types";
 
 const key = (o: SourceOptions) => JSON.stringify(o);
 
-/** Caméra + micro via getUserMedia. `devices` est injectable (tests, autre environnement). */
+/** Camera + microphone via getUserMedia. `devices` is injectable (tests, other environments). */
 export class CameraSource implements MediaSourceStrategy {
   readonly id = "camera";
   private stream: MediaStream | null = null;
@@ -57,8 +58,8 @@ export class CameraSource implements MediaSourceStrategy {
 
 export function describeMediaError(e: unknown): string {
   const name = e instanceof Error ? e.name : "";
-  if (name === "NotAllowedError") return "Accès à la caméra ou au micro refusé par le système.";
-  if (name === "NotFoundError" || name === "OverconstrainedError") return "Caméra ou micro introuvable.";
-  if (name === "NotReadableError") return "Caméra ou micro déjà utilisé par une autre application.";
-  return e instanceof Error ? e.message : "Capture impossible.";
+  if (name === "NotAllowedError") return t("media.denied");
+  if (name === "NotFoundError" || name === "OverconstrainedError") return t("media.notFound");
+  if (name === "NotReadableError") return t("media.inUse");
+  return e instanceof Error ? e.message : t("media.failed");
 }

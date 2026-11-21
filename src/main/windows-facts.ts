@@ -16,7 +16,7 @@ async function out(cmd: string, args: string[]): Promise<string | null> {
 }
 
 /**
- * Lectures seules (reg query, powercfg /query) : rien n'est modifié. Hors Windows : `null`, sans rien exécuter.
+ * Read-only (reg query, powercfg /query): nothing is modified. Outside Windows: `null`, nothing is executed.
  */
 export async function collectWindowsFacts(): Promise<WindowsFacts | null> {
   if (process.platform !== "win32") return null;

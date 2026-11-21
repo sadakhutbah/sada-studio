@@ -7,14 +7,14 @@ import type { DeviceStore, Persisted, PersistStore } from "../core/kiosk/supervi
 const deviceFile = () => join(app.getPath("userData"), "device.bin");
 const stateFile = () => join(app.getPath("userData"), "kiosk-state.json");
 
-/** Le chiffrement du système est disponible, et pas le repli en clair de Linux (« basic_text »). */
+/** System encryption is available, and not Linux's plain-text fallback ("basic_text"). */
 export function vaultAvailable(): boolean {
   if (!safeStorage.isEncryptionAvailable()) return false;
   const backend = (safeStorage as { getSelectedStorageBackend?: () => string }).getSelectedStorageBackend?.();
   return backend !== "basic_text" && backend !== "unknown";
 }
 
-/** Écriture atomique : un plantage en plein écrit ne laisse jamais un fichier tronqué. */
+/** Atomic write: a crash mid-write never leaves a truncated file. */
 function writeAtomic(path: string, data: string | Buffer, mode = 0o600): void {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.tmp`;
@@ -23,15 +23,15 @@ function writeAtomic(path: string, data: string | Buffer, mode = 0o600): void {
 }
 
 /**
- * Identité de l'appareil, chiffrée par safeStorage (DPAPI sous Windows). Sans coffre, elle reste en mémoire :
- * l'application fonctionne mais devra être appairée de nouveau au prochain lancement.
+ * Device identity, encrypted by safeStorage (DPAPI on Windows). Without a vault it stays in memory:
+ * the application works but will have to be paired again at the next launch.
  */
 export class SafeDeviceStore implements DeviceStore {
   private memory: DeviceCredentials | null = null;
   readonly persistent = vaultAvailable();
 
   constructor() {
-    // Ancienne version : connexion par mot de passe mémorisée. Elle n'a plus lieu d'être : on l'efface.
+    // Old version: stored password login. It is obsolete: erase it.
     rmSync(join(app.getPath("userData"), "credentials.bin"), { force: true });
   }
 
@@ -42,7 +42,7 @@ export class SafeDeviceStore implements DeviceStore {
       const d = JSON.parse(safeStorage.decryptString(readFileSync(deviceFile()))) as DeviceCredentials;
       return d.baseUrl && d.deviceId && d.deviceSecret && d.mosque?.name ? d : null;
     } catch {
-      // Fichier illisible (profil Windows recréé, clé DPAPI changée) : il faudra réappairer.
+      // Unreadable file (Windows profile recreated, DPAPI key changed): pairing must be redone.
       return null;
     }
   }
@@ -58,7 +58,7 @@ export class SafeDeviceStore implements DeviceStore {
   }
 }
 
-/** « J'étais en direct » et directs écartés : rien de secret, un petit JSON. */
+/** "I was live" and dismissed lives: nothing secret, a small JSON. */
 export class FilePersistStore implements PersistStore {
   load(): Persisted {
     try {
@@ -73,7 +73,7 @@ export class FilePersistStore implements PersistStore {
     try {
       writeAtomic(stateFile(), JSON.stringify(p));
     } catch {
-      // Disque plein ou verrouillé : la reprise sera simplement moins fine, le serveur reste maître.
+      // Disk full or locked: resuming will just be less precise, the server remains the master.
     }
   }
 }

@@ -1,8 +1,8 @@
-/** Débit (kbit/s) entre deux relevés du compteur d'octets envoyés. */
+/** Bitrate (kbit/s) between two readings of the sent-bytes counter. */
 export class BitrateEstimator {
   private last: { bytes: number; at: number } | null = null;
 
-  /** Rend le débit depuis le relevé précédent, ou 0 au premier relevé / si le compteur repart de zéro. */
+  /** Returns the bitrate since the previous reading, or 0 on the first reading / if the counter restarts from zero. */
   sample(bytesSent: number, at: number): number {
     const prev = this.last;
     this.last = { bytes: bytesSent, at };
@@ -15,7 +15,7 @@ export class BitrateEstimator {
   }
 }
 
-/** « 1:02:03 » ou « 02:03 ». */
+/** "1:02:03" or "02:03". */
 export function formatDuration(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
   const h = Math.floor(total / 3600);

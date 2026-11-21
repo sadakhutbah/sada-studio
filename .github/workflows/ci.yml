@@ -27,20 +27,27 @@ jobs:
       - run: npm run build
 
   installers:
-    # Installeurs non signés, en artefacts, uniquement sur les tags vX.Y.Z.
+    # Installers for the three platforms, as workflow artifacts, only on vX.Y.Z tags; the `release` job then
+    # publishes them in a GitHub Release, which is the update feed of the installed applications.
+    # Code signing is optional: it is switched on only when the matching secrets exist.
     if: startsWith(github.ref, 'refs/tags/v')
     needs: check
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            name: windows
-            args: --win
-          - os: macos-latest
-            name: mac
-            args: --mac
+          - { os: windows-latest, name: windows, args: --win }
+          - { os: macos-latest, name: mac, args: --mac }
+          - { os: ubuntu-latest, name: linux, args: --linux }
     runs-on: ${{ matrix.os }}
+    env:
+      # Certificates (base64 .p12 or URL). Empty = unsigned build. Linux is never signed.
+      CSC_LINK: ${{ matrix.name == 'mac' && secrets.MAC_CSC_LINK || matrix.name == 'windows' && secrets.WIN_CSC_LINK || '' }}
+      CSC_KEY_PASSWORD: ${{ matrix.name == 'mac' && secrets.MAC_CSC_KEY_PASSWORD || matrix.name == 'windows' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+      # macOS notarization (Apple Developer Program).
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -49,14 +56,50 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npx electron-builder ${{ matrix.args }} --publish never
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Build installers
+        shell: bash
+        run: |
+          flags=""
+          if [ -z "$CSC_LINK" ]; then
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            echo "No signing certificate for ${{ matrix.name }}: unsigned build."
+          elif [ "${{ matrix.name }}" = "mac" ]; then
+            # Notarize only if every Apple credential is present.
+            if [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+              flags="$flags -c.mac.notarize=true"
+            fi
+          fi
+          npx electron-builder ${{ matrix.args }} --publish never $flags
       - uses: actions/upload-artifact@v4
         with:
           name: sada-studio-${{ matrix.name }}
           path: |
             dist/*.exe
+            dist/*.blockmap
             dist/*.dmg
             dist/*.zip
+            dist/*.AppImage
+            dist/latest*.yml
           if-no-files-found: error
+
+  release:
+    # Publishes every installer and latest*.yml in the GitHub Release of the tag (GITHUB_TOKEN of the workflow).
+    needs: installers
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: feed
+          pattern: sada-studio-*
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -l feed
+          # Created as a draft, undrafted once every asset is uploaded: a client never sees a half-published release.
+          gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --generate-notes feed/*
+          gh release edit "$GITHUB_REF_NAME" --draft=false

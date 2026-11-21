@@ -1,4 +1,4 @@
-/** Réglages audio : les traitements automatiques sont coupés par défaut (voix de l'imam, musique des récitations). */
+/** Audio settings: automatic processing is off by default (imam's voice, recitations). */
 export interface AudioSettings {
   echoCancellation: boolean;
   noiseSuppression: boolean;
@@ -11,19 +11,19 @@ export interface SourceOptions {
   videoDeviceId?: string;
   audioDeviceId?: string;
   audio: AudioSettings;
-  /** Dimensions et cadence demandées (idéales, le matériel arbitre). */
+  /** Requested size and frame rate (ideal values; the hardware decides). */
   video?: { width: number; height: number; frameRate: number };
 }
 
 /**
- * Stratégie de source : d'où viennent les pistes à diffuser (caméra aujourd'hui ; écran, scène
- * composée, mixage audio plus tard). `acquire` rend le même flux tant que les options ne changent
- * pas : l'aperçu et la diffusion partagent donc la même capture. Le propriétaire appelle `release`.
+ * Source strategy: where the tracks to broadcast come from (camera today; screen, composed
+ * scene, audio mixing later). `acquire` returns the same stream as long as the options do not change,
+ * so the preview and the broadcast share the same capture. The owner calls `release`.
  */
 export interface MediaSourceStrategy {
   readonly id: string;
   acquire(options: SourceOptions): Promise<MediaStream>;
   release(): void;
-  /** Notifie la perte de la source (caméra débranchée). Renvoie la fonction de désabonnement. */
+  /** Notifies the loss of the source (camera unplugged). Returns the unsubscribe function. */
   onEnded(cb: () => void): () => void;
 }

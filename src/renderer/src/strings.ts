@@ -30,6 +30,7 @@ export const fr = {
     since: " depuis {t}",
     resuming: "Redémarrage pendant un direct : en attente de l'ordre du serveur.",
     updateWaiting: "Mise à jour {v} prête. {why}",
+    updateDownloading: "Mise à jour {v} en cours de téléchargement ({p} %).",
     updateReady: "Mise à jour {v} en cours d'installation.",
     noVault: "Appairage non mémorisé : il sera perdu à la fermeture de l'application.",
     retryIn: "Nouvelle tentative dans {t}.",

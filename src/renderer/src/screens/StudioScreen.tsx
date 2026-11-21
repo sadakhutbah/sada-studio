@@ -47,7 +47,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
     [prefs.videoDeviceId, prefs.audioDeviceId, prefs.audio],
   );
 
-  // Aperçu (et armement) : la même capture sert ensuite à la diffusion. Caméra absente : nouvel essai, attente croissante bornée.
+  // Preview (and arming): the same capture is then used for the broadcast. Camera missing: retry with bounded growing delays.
   const captureBackoff = useRef(new Backoff({ baseMs: 3_000, maxMs: 60_000, jitter: 0.2 }));
   useEffect(() => {
     if (active) return;
@@ -71,7 +71,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
       alive = false;
       clearTimeout(timer);
     };
-    // Une caméra rebranchée (`cameras.length`) relance aussitôt la capture, sans attendre la prochaine tentative.
+    // A re-plugged camera (`cameras.length`) restarts the capture right away, without waiting for the next attempt.
   }, [sourceOptions, active, source, captureTry, cameras.length]);
 
   useEffect(() => {
@@ -111,7 +111,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
 
   const stop = async () => {
     setConfirmStop(false);
-    // Coupe ici d'abord (le superviseur écarte ce direct), puis le serveur est prévenu.
+    // Cut here first (the supervisor dismisses this live), then the server is notified.
     await window.studio.kiosk.stopLive();
   };
 
@@ -239,7 +239,9 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
           {kiosk.resuming && <p className="m-0 rounded-lg bg-warn-bg px-3 py-2 text-[0.9rem] text-warn">{fr.box.resuming}</p>}
           {kiosk.update && (
             <p className="m-0 rounded-lg bg-paper-2 px-3 py-2 text-[0.9rem] text-muted">
-              {kiosk.update.waiting
+              {kiosk.update.downloading !== null
+                ? fill(fr.box.updateDownloading, { v: kiosk.update.version, p: kiosk.update.downloading })
+                : kiosk.update.waiting
                 ? fill(fr.box.updateWaiting, { v: kiosk.update.version, why: kiosk.update.waiting })
                 : fill(fr.box.updateReady, { v: kiosk.update.version })}
             </p>

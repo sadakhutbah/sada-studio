@@ -8,7 +8,7 @@ export interface MosqueInfo {
   slug?: string;
 }
 
-/** Ce qui identifie l'appareil auprès de Sada une fois appairé. Le secret ne quitte jamais le processus principal. */
+/** What identifies the device to Sada once paired. The secret never leaves the main process. */
 export interface DeviceCredentials {
   baseUrl: string;
   deviceId: string;
@@ -18,10 +18,10 @@ export interface DeviceCredentials {
 
 export interface PairingChallenge {
   deviceCode: string;
-  /** Code court à saisir dans la console, ex. « K7QM-4TZ2 ». */
+  /** Short code to type in the console, e.g. "K7QM-4TZ2". */
   userCode: string;
   expiresInS: number;
-  /** Intervalle d'interrogation conseillé, en secondes. */
+  /** Recommended polling interval, in seconds. */
   intervalS: number;
 }
 
@@ -31,7 +31,7 @@ export type PairPoll =
   | { status: "expired" }
   | { status: "denied" };
 
-/** Un créneau du planning (heures en ms depuis l'époque). */
+/** A schedule slot (times in ms since the epoch). */
 export interface Slot {
   id?: string;
   type: StreamKind;
@@ -51,34 +51,34 @@ export interface CurrentLive {
 
 export type LiveOrder = "idle" | "live";
 
-/** Un contrôle du poste, tel que le serveur le reçoit (identifiants stables : camera, micro, network, windows_autologon…). */
+/** A workstation check as the server receives it (stable ids: camera, micro, network, windows_autologon…). */
 export interface HealthCheck {
   id: string;
   ok: boolean;
   detail: string;
 }
 
-/** Santé détaillée jointe à chaque battement ; le serveur s'en sert pour prévenir les opérateurs par e-mail. */
+/** Detailed health attached to each heartbeat; the server uses it to e-mail the operators. */
 export interface HealthPayload {
   checks: HealthCheck[];
-  /** Dernière erreur de la session d'émission (conservée jusqu'au prochain direct réussi). */
+  /** Last error of the broadcast session (kept until the next successful live). */
   last_error: { code: string; message: string } | null;
-  /** Le direct demandé n'a pas pu démarrer (en cours tant qu'il n'a pas démarré). */
+  /** The requested live could not start (set until it has started). */
   live_start_failure: { message: string } | null;
 }
 
-/** Ce que l'appareil dit de lui à chaque battement. */
+/** What the device reports about itself on each heartbeat. */
 export interface HeartbeatReport {
   state: string;
   version: string;
   camera: boolean;
   micro: boolean;
-  /** kbit/s envoyés en ce moment. */
+  /** kbit/s currently being sent. */
   bitrate: number;
   health: HealthPayload;
 }
 
-/** Nouvel identifiant d'appareil remis par le serveur après une rotation demandée dans la console. */
+/** New device credential issued by the server after a rotation requested in the console. */
 export interface RotatedCredentials {
   deviceId: string;
   deviceSecret: string;
@@ -86,7 +86,7 @@ export interface RotatedCredentials {
 
 export interface HeartbeatReply {
   config: Record<string, unknown>;
-  /** Présent seulement quand la console a demandé une rotation : à ranger et à utiliser dès maintenant. */
+  /** Present only when the console requested a rotation: store it and use it right away. */
   credentials?: RotatedCredentials;
   schedule: Slot[];
   command: LiveOrder;
@@ -99,24 +99,24 @@ export interface StreamMeta {
 }
 
 export interface PairingApi {
-  /** `machineName` : nom de l'ordinateur, proposé à la console comme nom de l'appareil. */
+  /** `machineName`: computer name, suggested to the console as the device name. */
   start(baseUrl: string, machineName?: string): Promise<PairingChallenge>;
   poll(baseUrl: string, deviceCode: string): Promise<PairPoll>;
 }
 
 /**
- * Surface de l'API Sada utilisée par le boîtier. Le contrat serveur est `docs/studio-devices.md` du dépôt sada
- * (source unique) : toute forme de fil n'existe que dans `SadaHttpApi`, le reste de l'application ne la voit pas.
+ * Surface of the Sada API used by the device. The server contract is `docs/studio-devices.md` of the sada repository
+ * (single source of truth): the wire format exists only in `SadaHttpApi`; the rest of the application never sees it.
  */
 export interface StudioApi {
   readonly pairing: PairingApi;
-  /** Identité de l'appareil pour les appels suivants ; `null` l'oublie. */
+  /** Device identity for subsequent calls; `null` forgets it. */
   useDevice(device: DeviceCredentials | null): void;
   heartbeat(report: HeartbeatReport): Promise<HeartbeatReply>;
-  /** Direct manuel, hors planning. 409 : un direct est déjà en cours. */
+  /** Manual live, outside the schedule. 409: a live is already running. */
   startLive(meta: StreamMeta): Promise<void>;
   stopLive(): Promise<void>;
-  /** L'appareil quitte la mosquée de lui-même ; le serveur révoque son identité. */
+  /** The device leaves the mosque by itself; the server revokes its identity. */
   unpair(): Promise<void>;
   readonly whip: WhipSignaling;
 }

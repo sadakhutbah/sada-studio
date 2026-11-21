@@ -13,7 +13,7 @@ export interface DeviceLists {
   microphones: MediaDeviceInfo[];
 }
 
-/** Liste caméras et micros ; relue quand un périphérique est branché ou débranché. */
+/** Lists cameras and microphones; re-read when a device is plugged or unplugged. */
 export function useDevices(refreshKey: unknown): DeviceLists {
   const [lists, setLists] = useState<DeviceLists>({ cameras: [], microphones: [] });
   useEffect(() => {
@@ -46,7 +46,7 @@ export function useBroadcast() {
 
 const SILENT = { rms: -100, peak: -100 };
 
-/** Vu-mètre : niveau (dBFS) rafraîchi à l'écran, ~30 fois par seconde. */
+/** Level meter: level (dBFS) refreshed on screen, ~30 times per second. */
 export function useLevel(stream: MediaStream | null): { rms: number; peak: number } {
   const [level, setLevel] = useState({ rms: -100, peak: -100 });
   const raf = useRef(0);
@@ -70,7 +70,7 @@ export function useLevel(stream: MediaStream | null): { rms: number; peak: numbe
   return stream ? level : SILENT;
 }
 
-/** Horloge d'une seconde pour la durée du direct. */
+/** One-second clock for the live duration. */
 export function useNow(active: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -81,7 +81,7 @@ export function useNow(active: boolean): number {
   return now;
 }
 
-/** État du boîtier, tenu par le processus principal ; l'interface le suit. */
+/** Device state, held by the main process; the UI follows it. */
 export function useKiosk(): KioskSnapshot | null {
   const [snap, setSnap] = useState<KioskSnapshot | null>(null);
   useEffect(() => {
@@ -97,8 +97,8 @@ export function useKiosk(): KioskSnapshot | null {
 }
 
 /**
- * Fait coller la session à l'ordre du serveur (voir `LiveKeeper`). Rend la prochaine nouvelle tentative annoncée.
- * Les options de capture sont lues au moment du démarrage : elles peuvent changer sans relancer le gardien.
+ * Keeps the session in line with the server order (see `LiveKeeper`). Returns the next announced retry.
+ * Capture options are read at start time: they can change without restarting the keeper.
  */
 export function useKeeper(
   session: BroadcastSession,
@@ -136,7 +136,7 @@ export function useKeeper(
 
 const FACTS_EVERY_MS = 60_000;
 
-/** Contrôles du poste : réglages Windows relus chaque minute (lecture seule), matériel vu par le navigateur. */
+/** Workstation checks: Windows settings re-read every minute (read-only), hardware as seen by the browser. */
 export function useHealth(kiosk: KioskSnapshot, cameras: number | null, microphones: number | null): HealthItem[] {
   const [facts, setFacts] = useState<Awaited<ReturnType<typeof window.studio.kiosk.windowsFacts>>>(null);
   useEffect(() => {
@@ -157,8 +157,8 @@ export function useHealth(kiosk: KioskSnapshot, cameras: number | null, micropho
 }
 
 /**
- * Dernière erreur de session (gardée jusqu'au prochain direct réussi) et échec de démarrage du direct demandé,
- * puis rapport au processus principal : état, matériel, contrôles. Le battement vers le serveur en est nourri.
+ * Last session error (kept until the next successful live) and start failure of the requested live,
+ * then report to the main process: state, hardware, checks. The heartbeat to the server is fed from it.
  */
 export function useReporter(
   state: SessionState,
@@ -169,7 +169,7 @@ export function useReporter(
 ): void {
   const [lastError, setLastError] = useState<{ code: string; message: string } | null>(null);
   const [seen, setSeen] = useState({ status: state.status, error: state.error });
-  // Ajustement d'état pendant le rendu (voir la documentation de React) : pas d'effet intermédiaire.
+  // State adjustment during render (see the React documentation): no intermediate effect.
   if (seen.status !== state.status || seen.error !== state.error) {
     setSeen({ status: state.status, error: state.error });
     if (state.status === "error" && state.error) setLastError({ code: state.errorCode ?? "session", message: state.error });
@@ -187,7 +187,7 @@ export function useReporter(
     const send = () =>
       window.studio.kiosk.report({ sessionState: state.status, camera, micro, bitrateKbps: latest.current, checks, lastError, startFailure });
     send();
-    // Le débit change sans cesse : il est renvoyé à intervalle fixe, pas à chaque changement.
+    // The bitrate changes constantly: it is sent at a fixed interval, not on every change.
     const id = setInterval(send, 10_000);
     return () => clearInterval(id);
   }, [state.status, camera, micro, checks, lastError, startFailure]);

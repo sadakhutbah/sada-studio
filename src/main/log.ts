@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 const MAX = 1_000_000;
 
-/** Journal local, tourné à 1 Mo : de quoi comprendre un plantage sans jamais remplir le disque. Aucun secret n'y est écrit. */
+/** Local log, rotated at 1 MB: enough to understand a crash without ever filling the disk. No secret is written to it. */
 export function log(message: string): void {
   const line = `${new Date().toISOString()} ${message}`;
   console.log(line);
@@ -15,10 +15,10 @@ export function log(message: string): void {
     try {
       if (statSync(file).size > MAX) renameSync(file, `${file}.old`);
     } catch {
-      // Pas encore de fichier.
+      // No file yet.
     }
     appendFileSync(file, `${line}\n`);
   } catch {
-    // Journal indisponible : sans importance pour le fonctionnement.
+    // Log unavailable: irrelevant for operation.
   }
 }
