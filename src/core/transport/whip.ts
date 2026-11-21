@@ -1,9 +1,10 @@
 import { ApiError, FatalError } from "../errors";
+import { t } from "../messages";
 import type { ConnectOptions, Transport, TransportStats } from "./types";
 
-/** Signalisation WHIP (RFC 9725) : trois appels. L'implémentation HTTP vit dans `api/sada-api.ts`. */
+/** WHIP signaling (RFC 9725): three calls. The HTTP implementation lives in `api/sada-api.ts`. */
 export interface WhipSignaling {
-  /** Envoie l'offre SDP ; rend la réponse SDP et l'identifiant de la ressource (Location). */
+  /** Sends the SDP offer; returns the SDP answer and the resource id (Location). */
   offer(sdp: string): Promise<{ answer: string; resource: string }>;
   /** Candidats ICE tardifs (trickle), fragment `application/trickle-ice-sdpfrag`. */
   patchIce(resource: string, fragment: string): Promise<void>;
@@ -13,14 +14,14 @@ export interface WhipSignaling {
 export interface WhipOptions {
   signaling: WhipSignaling;
   createPeer?: () => RTCPeerConnection;
-  /** Attente maximale de la collecte ICE avant d'envoyer l'offre. */
+  /** Maximum wait for ICE gathering before sending the offer. */
   gatherTimeoutMs?: number;
   connectTimeoutMs?: number;
-  /** Délai de grâce avant de déclarer perdue une liaison « disconnected » (elle revient souvent seule). */
+  /** Grace delay before declaring a "disconnected" link lost (it often comes back by itself). */
   disconnectGraceMs?: number;
 }
 
-/** Transport WHIP : une RTCPeerConnection envoyante, négociée en un aller-retour HTTP. */
+/** WHIP transport: a sending RTCPeerConnection, negotiated in a single HTTP round trip. */
 export class WhipTransport implements Transport {
   readonly kind = "whip";
   private pc: RTCPeerConnection | null = null;
@@ -56,7 +57,7 @@ export class WhipTransport implements Transport {
       await pc.setLocalDescription(await pc.createOffer());
       await this.waitGathered(pc, this.opts.gatherTimeoutMs ?? 2_000);
       const sdp = pc.localDescription?.sdp;
-      if (!sdp) throw new Error("Offre SDP vide.");
+      if (!sdp) throw new Error(t("whip.emptyOffer"));
 
       const { answer, resource } = await this.opts.signaling.offer(sdp);
       this.resource = resource;
@@ -120,14 +121,14 @@ export class WhipTransport implements Transport {
 
   private waitConnected(pc: RTCPeerConnection, timeoutMs: number): Promise<void> {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("Liaison WebRTC non établie à temps.")), timeoutMs);
+      const timer = setTimeout(() => reject(new Error(t("whip.timeout"))), timeoutMs);
       const check = () => {
         if (pc.connectionState === "connected") {
           clearTimeout(timer);
           resolve();
         } else if (pc.connectionState === "failed" || pc.connectionState === "closed") {
           clearTimeout(timer);
-          reject(new Error("Liaison WebRTC refusée."));
+          reject(new Error(t("whip.refused")));
         }
       };
       pc.addEventListener("connectionstatechange", check);
@@ -161,10 +162,10 @@ export class WhipTransport implements Transport {
   }
 }
 
-/** Les erreurs de signalisation qui ne se règlent pas en réessayant. */
+/** Signaling errors that retrying cannot fix. */
 export function classifySignalingError(e: unknown): Error {
   if (e instanceof ApiError) {
-    if (e.status === 401 || e.status === 403) return new FatalError("Cet appareil n'est plus autorisé à diffuser.");
+    if (e.status === 401 || e.status === 403) return new FatalError(t("whip.notAuthorized"));
     if (e.status === 409) return new FatalError(e.message, "conflict");
   }
   return e instanceof Error ? e : new Error(String(e));

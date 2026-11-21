@@ -1,19 +1,19 @@
-// Faux serveur Sada, reflet du contrat `docs/studio-devices.md` du dépôt sada (source unique) : mêmes routes, mêmes
-// corps, mêmes codes (401 invalid/revoked, 404/410 d'appairage, 409 live_active avec `since`, 422 bad_type), même
-// logique d'ordre (direct à partir de « début − marge », direct manuel jamais coupé par un créneau, arrêt manuel
-// d'un créneau sans redémarrage). `npm run mock`, puis, dans l'application, adresse http://127.0.0.1:8787.
-// Le code d'appairage s'affiche ici ; il est accepté seul au bout de APPROVE_AFTER_MS (8 s par défaut), ou à la main :
+// Fake Sada server, mirroring the contract `docs/studio-devices.md` of the sada repository (single source of truth): same routes, same
+// bodies, same codes (401 invalid/revoked, 404/410 for pairing, 409 live_active with `since`, 422 bad_type), same
+// order logic (live from "start − margin", manual live never cut by a slot, manual stop of a slot
+// without restart). `npm run mock`, then enter http://127.0.0.1:8787 as the address in the application.
+// The pairing code is printed here; it is accepted automatically after APPROVE_AFTER_MS (8 s by default), or by hand:
 //   curl -X POST 'http://127.0.0.1:8787/__mock/approve'
-// Pilotage à la main (hors contrat) : /__mock/live?type=khutba&title=… , /__mock/idle , /__mock/revoke ,
-// /__mock/conflict?on=1 , /__mock/rotate . Le même moteur sert aux tests (tests/helpers.ts).
+// Manual control (outside the contract): /__mock/live?type=khutba&title=… , /__mock/idle , /__mock/revoke ,
+// /__mock/conflict?on=1 , /__mock/rotate . The same engine serves the tests (tests/helpers.ts).
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 
-const MOSQUE = { name: "Mosquée Alpha", slug: "alpha" };
+const MOSQUE = { name: "Alpha Mosque", slug: "alpha" };
 const TYPES = ["khutba", "dars", "conference"];
 const MARGIN_S = 120;
 
-/** Prochain vendredi 13 h 15 (heure locale), au moins une heure devant. */
+/** Next Friday 13:15 (local time), at least one hour ahead. */
 export function nextFriday(now = Date.now()) {
   const d = new Date(now);
   d.setHours(13, 15, 0, 0);
@@ -32,39 +32,39 @@ export async function createMockSada({ port = 0, approveAfterMs = null, codeTtlS
   const mock = {
     url: "",
     requests,
-    /** Créneaux : { slot_id, type, title, starts_at, ends_at } (ISO UTC). */
+    /** Slots: { slot_id, type, title, starts_at, ends_at } (ISO UTC). */
     schedule: [],
-    /** Direct manuel en cours : { type, title, startedAt, deviceId } ou null. */
+    /** Running manual live: { type, title, startedAt, deviceId } or null. */
     manual: null,
-    /** Créneaux arrêtés à la main (pas de redémarrage). */
+    /** Slots stopped by hand (no restart). */
     stopped: new Set(),
-    /** Statut forcé de l'offre WHIP (ex. 409 : un autre publieur). */
+    /** Forced status of the WHIP offer (e.g. 409: another publisher). */
     whipStatus: null,
-    /** Les n prochains battements répondent ce statut (ex. 500). */
+    /** The next n heartbeats answer with this status (e.g. 500). */
     failHeartbeats: 0,
     heartbeatInterval: 30,
-    /** Un autre publieur (OBS…) tient le flux depuis `since`. */
+    /** Another publisher (OBS…) has held the stream since `since`. */
     otherPublisher: false,
     since: new Date(Date.now() - 12 * 60_000).toISOString(),
-    /** Horloge du serveur (pour les essais). */
+    /** Server clock (for tests). */
     now: () => Date.now(),
     heartbeats: () => requests.filter((r) => r.url === "/api/v1/studio/heartbeat").map((r) => JSON.parse(r.body || "{}")),
-    /** Saisie du code dans la console : sans argument, tous les codes en attente. */
+    /** Code entry in the console: with no argument, all pending codes. */
     approve(userCode) {
       for (const [, p] of pairings) if (!userCode || p.userCode === userCode) p.approved = true;
     },
     revokeAll() {
       for (const d of devices.values()) d.revoked = true;
     },
-    /** La console demande une rotation : le prochain battement apporte un nouveau secret. */
+    /** The console requests a rotation: the next heartbeat brings a new secret. */
     rotateAll() {
       for (const d of devices.values()) d.rotate = true;
     },
     get devices() {
       return [...devices.values()];
     },
-    /** Direct manuel (comme `live/start`) ou créneau en cours imposé, pour les essais. */
-    setLive({ type = "khutba", title = "Direct", source = "manual" } = {}) {
+    /** Manual live (like `live/start`) or forced running slot, for tests. */
+    setLive({ type = "khutba", title = "Live", source = "manual" } = {}) {
       if (source === "manual") mock.manual = { type, title, startedAt: mock.now(), deviceId: null };
       else {
         const t = mock.now();
@@ -86,7 +86,7 @@ export async function createMockSada({ port = 0, approveAfterMs = null, codeTtlS
 
   const slotView = (s) => ({ ...s, starts_in_s: Math.round((Date.parse(s.starts_at) - mock.now()) / 1000) });
 
-  /** L'ordre du serveur (studio_plan.decide) : manuel > créneau (de début − marge à la fin) > repos. */
+  /** The server order (studio_plan.decide): manual > slot (from start − margin to end) > rest. */
   function order() {
     const now = mock.now();
     const slots = [...mock.schedule].sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at)).filter((s) => Date.parse(s.ends_at) > now);
@@ -147,13 +147,13 @@ export async function createMockSada({ port = 0, approveAfterMs = null, codeTtlS
       }
     };
 
-    // Aides pour l'essayeur (hors contrat).
+    // Helpers for the tester (outside the contract).
     if (path === "/__mock/approve") return mock.approve(url.searchParams.get("code") ?? undefined), json(200, { ok: true });
     if (path === "/__mock/revoke") return mock.revokeAll(), json(200, { ok: true });
     if (path === "/__mock/rotate") return mock.rotateAll(), json(200, { ok: true });
     if (path === "/__mock/idle") return mock.setIdle(), json(200, { ok: true });
     if (path === "/__mock/live") {
-      mock.setLive({ type: url.searchParams.get("type") ?? "khutba", title: url.searchParams.get("title") ?? "Direct", source: "manual" });
+      mock.setLive({ type: url.searchParams.get("type") ?? "khutba", title: url.searchParams.get("title") ?? "Live", source: "manual" });
       return json(200, { ok: true });
     }
     if (path === "/__mock/conflict") return (mock.whipStatus = url.searchParams.get("on") === "0" ? null : 409), json(200, { ok: true });
@@ -165,7 +165,7 @@ export async function createMockSada({ port = 0, approveAfterMs = null, codeTtlS
       const user_code = n === 1 ? "K7QM-4TZ2" : `K7Q${n}-4TZ2`;
       const name = String(parsed().name ?? "").trim().slice(0, 60);
       pairings.set(device_code, { userCode: user_code, name, expiresAt: Date.now() + codeTtlS * 1000, approved: false, deviceId: null });
-      if (log) console.log(`Code d'appairage : ${user_code}${name ? ` (machine « ${name} »)` : ""}`);
+      if (log) console.log(`Pairing code: ${user_code}${name ? ` (machine "${name}")` : ""}`);
       if (approveAfterMs !== null) setTimeout(() => (pairings.get(device_code).approved = true), approveAfterMs);
       return json(200, { device_code, user_code, expires_in: codeTtlS, interval: 5 });
     }
@@ -185,11 +185,11 @@ export async function createMockSada({ port = 0, approveAfterMs = null, codeTtlS
       }
       if (d.revoked) return json(410, { status: "revoked", message: "This device has been revoked." });
       if (d.spoke) return json(410, { status: "claimed", message: "This pairing was already completed." });
-      d.secret = newSecret(d.id); // un secret jamais utilisé (réponse perdue) est remplacé
+      d.secret = newSecret(d.id); // a never-used secret (lost response) is replaced
       return json(200, { status: "approved", device_id: d.id, device_secret: d.secret, name: d.name, mosque: MOSQUE });
     }
 
-    // ── Routes de l'appareil : identifiant porteur ──
+    // ── Device routes: bearer credential ──
     const bearer = /^Bearer (sdev_\d+\.\S+)$/.exec(req.headers.authorization ?? "")?.[1] ?? "";
     const dev = [...devices.values()].find((d) => d.secret === bearer || (d.prevSecret && d.prevSecret === bearer));
     if (path.startsWith("/api/v1/studio/") || path.startsWith("/api/v1/live/studio/")) {
@@ -217,7 +217,7 @@ export async function createMockSada({ port = 0, approveAfterMs = null, codeTtlS
         dev.secret = newSecret(dev.id);
         dev.rotate = false;
         out.credentials = { device_id: dev.id, device_secret: dev.secret };
-      } else if (dev.prevSecret && bearer === dev.secret) dev.prevSecret = ""; // le nouveau secret est adopté
+      } else if (dev.prevSecret && bearer === dev.secret) dev.prevSecret = ""; // the new secret is adopted
       return json(200, out);
     }
     if (path === "/api/v1/studio/live/start" && req.method === "POST") {
@@ -277,7 +277,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const t = nextFriday();
   mock.schedule = [
     { slot_id: "jumua-0@khutba", type: "khutba", title: "Khutba du vendredi", starts_at: iso(t), ends_at: iso(t + 45 * 60_000) },
-    { slot_id: "dars-1@isha", type: "dars", title: "Dars après Isha", starts_at: iso(t + 6 * 3600_000), ends_at: iso(t + 7 * 3600_000) },
+    { slot_id: "dars-1@isha", type: "dars", title: "Dars after Isha", starts_at: iso(t + 6 * 3600_000), ends_at: iso(t + 7 * 3600_000) },
   ];
   console.log(`Faux Sada sur ${mock.url}`);
 }

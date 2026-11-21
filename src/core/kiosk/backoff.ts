@@ -1,8 +1,8 @@
-/** Attente croissante bornée : base, 2×base, 4×base… jusqu'à `max`, avec une légère dispersion pour que les boîtiers ne frappent pas ensemble. */
+/** Bounded growing delay: base, 2×base, 4×base… up to `max`, with slight jitter so devices do not all hit at once. */
 export interface BackoffOptions {
   baseMs: number;
   maxMs: number;
-  /** Part aléatoire ajoutée, de 0 à 1 (0,2 = jusqu'à +20 %). */
+  /** Random share added, from 0 to 1 (0.2 = up to +20%). */
   jitter?: number;
   random?: () => number;
 }

@@ -2,6 +2,7 @@ import { BrowserWindow, ipcMain, powerSaveBlocker } from "electron";
 import { hostname } from "node:os";
 import { SadaHttpApi } from "../core/api/sada-api";
 import type { StreamMeta } from "../core/api/types";
+import { t } from "../core/messages";
 import { ApiError } from "../core/errors";
 import { KioskSupervisor, type ClientReport } from "../core/kiosk/supervisor";
 import type { UpdateGate } from "../core/kiosk/update-gate";
@@ -32,8 +33,8 @@ export interface Kiosk {
 }
 
 /**
- * Racine de composition : client Sada, coffre, superviseur, mise à jour. Le client et le secret de l'appareil
- * vivent ici, dans le processus principal ; l'interface ne reçoit que `KioskSnapshot`.
+ * Composition root: Sada client, vault, supervisor, updates. The client and the device secret
+ * live here, in the main process; the UI only receives `KioskSnapshot`.
  */
 export function registerIpc(version: string): Kiosk {
   const api = new SadaHttpApi();
@@ -45,7 +46,7 @@ export function registerIpc(version: string): Kiosk {
   const broadcast = () => {
     const s = snapshot();
     for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("kiosk:changed", s);
-    // L'écran reste allumé pendant l'armement et le direct ; le système ne se suspend jamais tant que l'application tourne.
+    // The screen stays on during arming and the live; the system never suspends while the application runs.
     const need = s.phase === "onair" || s.phase === "armed";
     if (need && displayBlocker === null) displayBlocker = powerSaveBlocker.start("prevent-display-sleep");
     if (!need && displayBlocker !== null) {
@@ -78,7 +79,7 @@ export function registerIpc(version: string): Kiosk {
   ipcMain.handle("kiosk:unpair", () => run(async () => (await supervisor.unpair(), null)));
   ipcMain.handle("kiosk:start-manual", (_e, meta: unknown) =>
     run(async () => {
-      if (!isMeta(meta)) throw new ApiError(0, "Type ou titre invalide.");
+      if (!isMeta(meta)) throw new ApiError(0, t("ipc.invalidLive"));
       await supervisor.startManual(meta);
       return null;
     }),

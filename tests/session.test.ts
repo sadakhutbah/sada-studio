@@ -12,7 +12,7 @@ class FakeTransport implements Transport {
   bytes = 0;
   constructor(private readonly outcome: "ok" | "fail" | "fatal" = "ok") {}
   async connect() {
-    if (this.outcome === "fail") throw new Error("réseau");
+    if (this.outcome === "fail") throw new Error("network");
     if (this.outcome === "fatal") throw new FatalError("droits");
   }
   onLost(cb: (r: string) => void) {
@@ -58,7 +58,7 @@ describe("BroadcastSession", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it("passe en direct puis s'arrête proprement sans libérer la source", async () => {
+  it("goes live then stops cleanly without releasing the source", async () => {
     const { session, transports, source } = setup(["ok"]);
     await session.start(opts);
     expect(session.snapshot.state.status).toBe("live");
@@ -68,15 +68,15 @@ describe("BroadcastSession", () => {
     expect(source.release).not.toHaveBeenCalled();
   });
 
-  it("une connexion initiale refusée met la session en erreur", async () => {
+  it("a refused initial connection puts the session in error", async () => {
     const { session } = setup(["fail"]);
     await session.start(opts);
-    expect(session.snapshot.state).toMatchObject({ status: "error", error: "réseau" });
+    expect(session.snapshot.state).toMatchObject({ status: "error", error: "network" });
     await session.stop();
     expect(session.snapshot.state.status).toBe("idle");
   });
 
-  it("se reconnecte seule après une perte de liaison, avec le même flux", async () => {
+  it("reconnects by itself after a link loss, with the same stream", async () => {
     const { session, transports, source } = setup(["ok", "ok"]);
     await session.start(opts);
     const startedAt = session.snapshot.state.startedAt;
@@ -89,18 +89,18 @@ describe("BroadcastSession", () => {
     expect(source.acquire).toHaveBeenCalledTimes(1);
   });
 
-  it("réessaie après un échec, puis abandonne au maximum de tentatives", async () => {
+  it("retries after a failure, then gives up at the maximum number of attempts", async () => {
     const { session, transports } = setup(["ok", "fail"], 2);
     await session.start(opts);
     transports[0].lost?.("coupure");
-    await vi.advanceTimersByTimeAsync(1000); // essai 1 échoue
+    await vi.advanceTimersByTimeAsync(1000); // attempt 1 fails
     expect(session.snapshot.state).toMatchObject({ status: "reconnecting", attempt: 2 });
-    await vi.advanceTimersByTimeAsync(1000); // essai 2 échoue, maximum atteint
+    await vi.advanceTimersByTimeAsync(1000); // attempt 2 fails, maximum reached
     expect(session.snapshot.state.status).toBe("error");
     expect(transports).toHaveLength(3);
   });
 
-  it("une erreur fatale pendant la reconnexion arrête les essais", async () => {
+  it("a fatal error during reconnection stops the attempts", async () => {
     const { session, transports } = setup(["ok", "fatal"]);
     await session.start(opts);
     transports[0].lost?.("coupure");
@@ -110,7 +110,7 @@ describe("BroadcastSession", () => {
     expect(transports).toHaveLength(2);
   });
 
-  it("arrêter pendant la reconnexion annule le prochain essai", async () => {
+  it("stopping during reconnection cancels the next attempt", async () => {
     const { session, transports } = setup(["ok", "ok"]);
     await session.start(opts);
     transports[0].lost?.("coupure");
@@ -120,20 +120,20 @@ describe("BroadcastSession", () => {
     expect(session.snapshot.state.status).toBe("idle");
   });
 
-  it("la perte de la caméra met fin au direct", async () => {
+  it("losing the camera ends the live", async () => {
     const { session, endSource } = setup(["ok"]);
     await session.start(opts);
     endSource();
     await vi.advanceTimersByTimeAsync(0);
     expect(session.snapshot.state.status).toBe("error");
-    expect(session.snapshot.state.error).toMatch(/déconnecté/);
+    expect(session.snapshot.state.error).toMatch(/disconnected/);
   });
 
-  it("mesure le débit à partir des octets envoyés", async () => {
+  it("measures the bitrate from the bytes sent", async () => {
     const { session, transports } = setup(["ok"]);
     await session.start(opts);
-    await vi.advanceTimersByTimeAsync(1000); // premier relevé
-    transports[0].bytes += 500_000; // 500 ko en 1 s = 4000 kbit/s
+    await vi.advanceTimersByTimeAsync(1000); // first reading
+    transports[0].bytes += 500_000; // 500 kB in 1 s = 4000 kbit/s
     await vi.advanceTimersByTimeAsync(1000);
     expect(session.snapshot.stats).toMatchObject({ bitrateKbps: 4000, rttMs: 20 });
   });

@@ -1,25 +1,25 @@
 export interface TransportStats {
-  /** Octets média envoyés depuis l'ouverture (cumulé). */
+  /** Media bytes sent since opening (cumulative). */
   bytesSent: number;
-  /** Aller-retour en ms, quand le transport sait le mesurer. */
+  /** Round-trip time in ms, when the transport can measure it. */
   rttMs?: number;
-  /** Cadence vidéo réellement envoyée. */
+  /** Video frame rate actually sent. */
   fps?: number;
 }
 
 export interface ConnectOptions {
-  /** Plafond du débit vidéo, en kbit/s. */
+  /** Video bitrate ceiling, in kbit/s. */
   maxVideoKbps?: number;
 }
 
 /**
- * Stratégie de transport : comment les pistes partent vers Sada (WHIP aujourd'hui, SRT plus tard).
- * Une instance sert à une connexion ; la session en crée une nouvelle à chaque reconnexion.
+ * Transport strategy: how the tracks reach Sada (WHIP today, SRT later).
+ * One instance serves one connection; the session creates a new one on each reconnection.
  */
 export interface Transport {
   readonly kind: string;
   connect(stream: MediaStream, options?: ConnectOptions): Promise<void>;
-  /** Appelé au plus une fois quand le transport perd la liaison après avoir été connecté. */
+  /** Called at most once when the transport loses the link after having been connected. */
   onLost(cb: (reason: string) => void): void;
   getStats(): Promise<TransportStats>;
   close(): Promise<void>;

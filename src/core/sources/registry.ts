@@ -3,8 +3,8 @@ import type { MediaSourceStrategy } from "./types";
 export type SourceFactory = () => MediaSourceStrategy;
 
 /**
- * Registre des sources. Point d'extension : le partage d'écran (« screen ») s'y enregistrera avec
- * sa propre stratégie, sans toucher à la session ni au transport.
+ * Source registry. Extension point: screen sharing ("screen") will register here with
+ * its own strategy, without touching the session or the transport.
  */
 export class SourceRegistry {
   private readonly factories = new Map<string, SourceFactory>();

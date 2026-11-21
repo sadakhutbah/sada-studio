@@ -3,7 +3,7 @@ import type { SessionStatus } from "@core/session/machine";
 import markDark from "./assets/sada-mark-encre.svg";
 import markGold from "./assets/sada-mark-or.svg";
 
-/* Composants repris de la console Sada (web/src/ui.tsx) : mêmes rayons, bordures et couleurs. */
+/* Components taken from the Sada console (web/src/ui.tsx): same radii, borders and colors. */
 
 export function Card({ children, className = "", ...rest }: { children: ReactNode; className?: string } & HTMLAttributes<HTMLElement>) {
   return (

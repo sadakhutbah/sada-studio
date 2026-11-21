@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, Menu, nativeImage, session, shell, Tray } f
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { backoffDelay } from "../core/kiosk/backoff";
+import { t } from "../core/messages";
 import { registerIpc, type Kiosk } from "./ipc";
 import { log } from "./log";
 
@@ -22,24 +23,24 @@ app.setAboutPanelOptions({
   iconPath: app.isPackaged ? join(process.resourcesPath, "icon.png") : join(app.getAppPath(), "build/icon.png"),
 });
 
-// Un boîtier n'a qu'une instance : une seconde ouverture ramène la fenêtre de la première.
+// A device runs a single instance: a second launch brings the first window back.
 if (!app.requestSingleInstanceLock()) {
   app.quit();
   process.exit(0);
 }
 
-// Un direct ne doit jamais ralentir parce que la fenêtre est cachée ou couverte.
+// A live must never slow down because the window is hidden or covered.
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
 app.commandLine.appendSwitch("disable-background-timer-throttling");
 app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
-// Essais sans matériel (CI, WSL) : caméra et micro simulés, sans demande d'autorisation.
+// Testing without hardware (CI, WSL): simulated camera and microphone, no permission prompt.
 if (process.env.SADA_STUDIO_FAKE_MEDIA === "1") {
   app.commandLine.appendSwitch("use-fake-device-for-media-stream");
   app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
 }
 
 const devUrl = process.env.ELECTRON_RENDERER_URL;
-/** Essais seulement (application non installée) : instance préremplie et script d'interface avant capture. */
+/** Testing only (application not installed): prefilled instance and UI script before capture. */
 const dev = !app.isPackaged;
 
 let win: BrowserWindow | null = null;
@@ -69,13 +70,13 @@ function createWindow(): BrowserWindow {
     },
   });
   w.once("ready-to-show", () => w.show());
-  // Fermer la fenêtre ne quitte pas : l'application continue dans la zone de notification.
+  // Closing the window does not quit: the application keeps running in the notification area.
   w.on("close", (e) => {
     if (quitting) return;
     e.preventDefault();
     w.hide();
   });
-  // Aucun lien ne s'ouvre dans l'application : le navigateur du système s'en charge.
+  // No link opens inside the application: the system browser handles it.
   w.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("https://")) void shell.openExternal(url);
     return { action: "deny" };
@@ -93,7 +94,7 @@ function load(w: BrowserWindow) {
   else void w.loadFile(join(__dirname, "../renderer/index.html"));
 }
 
-/** Le rendu plante ou se fige : on recharge la page. L'ordre vient du serveur, la reprise est donc automatique. */
+/** The renderer crashes or freezes: reload the page. The order comes from the server, so recovery is automatic. */
 function watchRenderer(w: BrowserWindow) {
   const crashes: number[] = [];
   let freeze: ReturnType<typeof setTimeout> | undefined;
@@ -101,19 +102,19 @@ function watchRenderer(w: BrowserWindow) {
     const now = Date.now();
     crashes.push(now);
     while (crashes.length && now - crashes[0] > 10 * 60_000) crashes.shift();
-    // Plantages répétés : on espace les relances (1 s, 2 s, 4 s… jusqu'à 30 s) au lieu de boucler.
+    // Repeated crashes: space out the reloads (1 s, 2 s, 4 s… up to 30 s) instead of looping.
     const wait = backoffDelay(crashes.length, { baseMs: 1_000, maxMs: 30_000 });
-    log(`Rendu relancé (${why}), dans ${wait} ms, ${crashes.length} incident(s) sur 10 min.`);
+    log(`Renderer reloaded (${why}) in ${wait} ms, ${crashes.length} incident(s) in 10 min.`);
     setTimeout(() => {
       if (!w.isDestroyed()) load(w);
     }, wait);
   };
-  w.webContents.on("render-process-gone", (_e, d) => reload(`render-process-gone : ${d.reason}`));
+  w.webContents.on("render-process-gone", (_e, d) => reload(`render-process-gone: ${d.reason}`));
   w.webContents.on("did-fail-load", (_e, code, desc, _url, isMainFrame) => {
-    if (isMainFrame && code !== -3) reload(`chargement échoué : ${desc}`);
+    if (isMainFrame && code !== -3) reload(`load failed: ${desc}`);
   });
   w.on("unresponsive", () => {
-    freeze = setTimeout(() => reload("interface figée"), 30_000);
+    freeze = setTimeout(() => reload("UI frozen"), 30_000);
   });
   w.on("responsive", () => clearTimeout(freeze));
 }
@@ -125,15 +126,15 @@ function showWindow() {
   win.focus();
 }
 
-/** Quitter arrête les directs : on demande confirmation, plus fermement pendant un direct. */
+/** Quitting stops the lives: ask for confirmation, more firmly during a live. */
 async function requestQuit() {
   const live = kiosk?.supervisor.view.wantLive;
   const { response } = await dialog.showMessageBox({
     type: "warning",
-    title: `Quitter ${APP_NAME}`,
-    message: live ? "Un direct est en cours. Quitter l'arrêtera." : "Quitter Sada Studio ?",
-    detail: "Une fois fermée, l'application ne diffusera plus les directs planifiés, jusqu'au prochain démarrage de Windows ou de l'application.",
-    buttons: ["Rester", "Quitter"],
+    title: t("quit.title", { app: APP_NAME }),
+    message: live ? t("quit.live") : t("quit.idle"),
+    detail: t("quit.detail"),
+    buttons: [t("quit.stay"), t("quit.quit")],
     defaultId: 0,
     cancelId: 0,
     noLink: true,
@@ -161,9 +162,9 @@ function createTray() {
   tray.setToolTip("Sada Studio");
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "Ouvrir Sada Studio", click: showWindow },
+      { label: t("tray.open"), click: showWindow },
       { type: "separator" },
-      { label: "Quitter", click: () => void requestQuit() },
+      { label: t("quit.quit"), click: () => void requestQuit() },
     ]),
   );
   tray.on("click", showWindow);
@@ -171,7 +172,7 @@ function createTray() {
 
 function lockDownPermissions() {
   const ses = session.defaultSession;
-  // Seuls caméra et micro, et seulement pour l'interface elle-même.
+  // Camera and microphone only, and only for the UI itself.
   ses.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === "media"));
   ses.setPermissionCheckHandler((_wc, permission) => permission === "media");
   if (!devUrl) {
@@ -188,7 +189,7 @@ function lockDownPermissions() {
   }
 }
 
-/** Aide aux essais : script d'interface optionnel, capture de la fenêtre, puis on quitte (SADA_STUDIO_CAPTURE=/chemin.png). */
+/** Testing aid: optional UI script, window capture, then quit (SADA_STUDIO_CAPTURE=/path.png). */
 function captureAndQuit(w: BrowserWindow, path: string) {
   w.webContents.once("did-finish-load", () => {
     const script = process.env.SADA_STUDIO_CAPTURE_SCRIPT;
@@ -207,16 +208,16 @@ app.on("second-instance", showWindow);
 app.on("before-quit", () => {
   quitting = true;
 });
-// Arrêt ou fermeture de session Windows : on ne bloque jamais l'extinction.
+// Windows shutdown or sign-out: never block it.
 app.on("session-end" as never, () => {
   quitting = true;
 });
-// La fenêtre peut être cachée : l'application vit dans la zone de notification.
+// The window may be hidden: the application lives in the notification area.
 app.on("window-all-closed", () => undefined);
 
 void app.whenReady().then(() => {
   lockDownPermissions();
-  // Démarrage avec la session Windows (et macOS) ; sans effet sous Linux et en développement.
+  // Start with the Windows (and macOS) session; no effect on Linux and in development.
   if (app.isPackaged && (process.platform === "win32" || process.platform === "darwin")) {
     app.setLoginItemSettings({ openAtLogin: true, args: ["--autostart"] });
   }
@@ -225,7 +226,7 @@ void app.whenReady().then(() => {
   createTray();
   win = createWindow();
   if (dev && process.env.SADA_STUDIO_INSTANCE && kiosk.supervisor.view.phase === "unpaired") {
-    void kiosk.supervisor.startPairing(process.env.SADA_STUDIO_INSTANCE).catch((e: Error) => log(`Appairage : ${e.message}`));
+    void kiosk.supervisor.startPairing(process.env.SADA_STUDIO_INSTANCE).catch((e: Error) => log(`Pairing: ${e.message}`));
   }
   if (dev && process.env.SADA_STUDIO_CAPTURE) captureAndQuit(win, process.env.SADA_STUDIO_CAPTURE);
   app.on("activate", showWindow);

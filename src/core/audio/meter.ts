@@ -1,4 +1,4 @@
-/** Niveau en dBFS (−100 = silence) d'un bloc d'échantillons flottants [-1, 1]. */
+/** Level in dBFS (−100 = silence) of a block of float samples [-1, 1]. */
 export function levelDb(samples: ArrayLike<number>): { rms: number; peak: number } {
   let sum = 0;
   let peak = 0;
@@ -11,16 +11,16 @@ export function levelDb(samples: ArrayLike<number>): { rms: number; peak: number
   return { rms: db(Math.sqrt(sum / Math.max(1, samples.length))), peak: db(peak) };
 }
 
-/** Position 0..1 d'un niveau dB sur le vu-mètre (−60 dB → 0, 0 dB → 1). */
+/** Position 0..1 of a dB level on the meter (−60 dB → 0, 0 dB → 1). */
 export const meterPosition = (db: number, floor = -60) => Math.min(1, Math.max(0, (db - floor) / -floor));
 
 export interface LevelMeter {
-  /** Niveaux courants en dBFS. */
+  /** Current levels in dBFS. */
   read(): { rms: number; peak: number };
   dispose(): void;
 }
 
-/** Vu-mètre branché sur la piste audio d'un flux (AnalyserNode). */
+/** Level meter attached to the audio track of a stream (AnalyserNode). */
 export function createLevelMeter(stream: MediaStream, ctx: AudioContext = new AudioContext()): LevelMeter {
   const source = ctx.createMediaStreamSource(stream);
   const analyser = ctx.createAnalyser();

@@ -7,7 +7,7 @@ export function unwrap<T>(r: IpcResult<T>): T {
   return r.value;
 }
 
-/** Signalisation WHIP côté interface : chaque appel passe par le processus principal, qui détient le secret de l'appareil. */
+/** WHIP signaling on the UI side: every call goes through the main process, which holds the device secret. */
 export const whipSignaling: WhipSignaling = {
   offer: async (sdp) => unwrap(await window.studio.whipOffer(sdp)),
   patchIce: async (resource, fragment) => void unwrap(await window.studio.whipPatch(resource, fragment)),

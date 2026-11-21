@@ -2,20 +2,20 @@ import { DEFAULT_AUDIO, type AudioSettings } from "@core/sources/types";
 import type { StreamKind } from "@core/api/types";
 
 export interface Prefs {
-  /** Type et titre du prochain direct manuel. */
+  /** Type and title of the next manual live. */
   kind: StreamKind;
   title: string;
   videoDeviceId: string;
   audioDeviceId: string;
   audio: AudioSettings;
-  /** Dernière adresse d'instance saisie. */
+  /** Last typed instance address. */
   instance: string;
 }
 
 const KEY = "sada-studio.prefs";
 const DEFAULTS: Prefs = { kind: "khutba", title: "", videoDeviceId: "", audioDeviceId: "", audio: DEFAULT_AUDIO, instance: "" };
 
-/** Préférences non secrètes, gardées dans le stockage local de l'interface. */
+/** Non-secret preferences, kept in the UI's local storage. */
 export function loadPrefs(): Prefs {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? "{}") as Partial<Prefs>;

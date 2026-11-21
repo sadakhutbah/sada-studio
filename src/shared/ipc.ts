@@ -3,13 +3,13 @@ import type { WindowsFacts } from "../core/health/health";
 import type { ClientReport, KioskView } from "../core/kiosk/supervisor";
 import type { UpdateStatus } from "../core/kiosk/update-gate";
 
-/** Résultat sérialisable d'un appel IPC : les erreurs gardent leur code HTTP (0 = réseau). */
+/** Serializable result of an IPC call: errors keep their HTTP code (0 = network). */
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; status: number; message: string };
 
-/** L'état du boîtier tel que l'interface le voit : jamais le secret de l'appareil. */
+/** The device state as the UI sees it: never the device secret. */
 export type KioskSnapshot = KioskView & { update: UpdateStatus | null };
 
-/** Ce que le processus principal expose à l'interface (`window.studio`). */
+/** What the main process exposes to the UI (`window.studio`). */
 export interface StudioBridge {
   kiosk: {
     get(): Promise<KioskSnapshot>;
@@ -20,7 +20,7 @@ export interface StudioBridge {
     startManual(meta: StreamMeta): Promise<IpcResult<null>>;
     stopLive(): Promise<IpcResult<null>>;
     dismissConflict(): Promise<void>;
-    /** État de la session d'émission et du matériel, repris dans chaque battement. */
+    /** State of the broadcast session and of the hardware, included in each heartbeat. */
     report(r: ClientReport): void;
     windowsFacts(): Promise<WindowsFacts | null>;
   };
