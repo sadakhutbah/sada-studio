@@ -61,6 +61,7 @@ export const fr = {
     keep: "Continuer le direct",
     pending: "L'arrêt sera confirmé au serveur dès que la connexion revient.",
   },
+  settings: { button: "Réglages", title: "Réglages", close: "Fermer" },
   sources: {
     kicker: "Sources",
     camera: "Caméra",

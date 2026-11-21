@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StreamKind } from "@core/api/types";
 import { meterPosition } from "@core/audio/meter";
 import { formatCountdown, formatWhen } from "@core/kiosk/format";
 import { isActive } from "@core/session/machine";
-import type { AudioSettings, SourceOptions } from "@core/sources/types";
+import type { SourceOptions } from "@core/sources/types";
 import { Backoff } from "@core/kiosk/backoff";
 import { describeMediaError } from "@core/sources/camera";
 import { formatBitrate, formatDuration } from "@core/stats";
@@ -11,8 +11,9 @@ import type { KioskSnapshot } from "@shared/ipc";
 import { useBroadcast, useDevices, useHealth, useKeeper, useLevel, useNow, useReporter } from "../hooks";
 import { loadPrefs, savePrefs, type Prefs } from "../prefs";
 import { fill, fr } from "../strings";
-import { Brand, Btn, Card, ErrorBox, Field, inputClass, Kicker, selectClass, StatusPill, Title, type PillKey } from "../ui";
+import { Brand, Btn, Card, ErrorBox, Field, inputClass, Kicker, StatusPill, Title, type PillKey } from "../ui";
 import { HealthPanel } from "./HealthPanel";
+import { SettingsPanel } from "./SettingsPanel";
 
 const kindLabel = (k: StreamKind) => fr.live[k];
 
@@ -32,6 +33,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   const [confirmUnpair, setConfirmUnpair] = useState(false);
   const [manualError, setManualError] = useState("");
   const [starting, setStarting] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const update = (patch: Partial<Prefs>) =>
     setPrefs((p) => {
@@ -113,7 +115,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
     await window.studio.kiosk.stopLive();
   };
 
-  const setAudio = (k: keyof AudioSettings, v: boolean) => update({ audio: { ...prefs.audio, [k]: v } });
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const locked = onAir;
   const conflict = kiosk.conflict?.message ?? (state.errorCode === "conflict" ? state.error : null);
   const since = kiosk.lastSeenAt ? new Date(kiosk.lastSeenAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "";
@@ -127,6 +129,10 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
             <span className="font-serif text-[1.2rem]">{kiosk.mosque?.name}</span>
           </div>
           <div className="flex items-center gap-2 text-[0.9rem]">
+            <Btn variante="light" className="min-h-9! px-3! py-1.5!" aria-haspopup="dialog" onClick={() => setSettingsOpen(true)}>
+              <span aria-hidden="true">⚙ </span>
+              {fr.settings.button}
+            </Btn>
             {confirmUnpair ? (
               <>
                 <span className="text-night-muted">{fr.nav.unpairHelp}</span>
@@ -312,48 +318,11 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
           </Card>
 
           <HealthPanel items={health} />
-
-          <Card>
-            <Kicker>{fr.sources.kicker}</Kicker>
-            <div className="grid gap-3.5">
-              <Field label={fr.sources.camera}>
-                <select value={prefs.videoDeviceId} disabled={locked} onChange={(e) => update({ videoDeviceId: e.target.value })} className={selectClass}>
-                  <option value="">{cameras.length ? fr.sources.default : fr.sources.none}</option>
-                  {cameras.map((d, i) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {d.label || `${fr.sources.camera} ${i + 1}`}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label={fr.sources.microphone}>
-                <select value={prefs.audioDeviceId} disabled={locked} onChange={(e) => update({ audioDeviceId: e.target.value })} className={selectClass}>
-                  <option value="">{microphones.length ? fr.sources.default : fr.sources.noMic}</option>
-                  {microphones.map((d, i) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {d.label || `${fr.sources.microphone} ${i + 1}`}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              {locked && <p className="m-0 text-[0.82rem] text-muted">{fr.sources.lockedLive}</p>}
-            </div>
-          </Card>
-
-          <Card>
-            <Kicker>{fr.audio.kicker}</Kicker>
-            <p className="mb-3 mt-0 text-[0.85rem] text-muted">{fr.audio.hint}</p>
-            <div className="grid gap-2">
-              {(["echoCancellation", "noiseSuppression", "autoGainControl"] as const).map((k) => (
-                <label key={k} className="flex items-center gap-2.5 text-[0.95rem]">
-                  <input type="checkbox" checked={prefs.audio[k]} disabled={locked} onChange={(e) => setAudio(k, e.target.checked)} />
-                  {fr.audio[k]}
-                </label>
-              ))}
-            </div>
-          </Card>
         </aside>
       </main>
+      {settingsOpen && (
+        <SettingsPanel prefs={prefs} cameras={cameras} microphones={microphones} locked={locked} onChange={update} onClose={closeSettings} />
+      )}
     </div>
   );
 }
