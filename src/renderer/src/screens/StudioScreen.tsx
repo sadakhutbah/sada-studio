@@ -239,7 +239,9 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
           {kiosk.resuming && <p className="m-0 rounded-lg bg-warn-bg px-3 py-2 text-[0.9rem] text-warn">{fr.box.resuming}</p>}
           {kiosk.update && (
             <p className="m-0 rounded-lg bg-paper-2 px-3 py-2 text-[0.9rem] text-muted">
-              {kiosk.update.waiting
+              {kiosk.update.downloading !== null
+                ? fill(fr.box.updateDownloading, { v: kiosk.update.version, p: kiosk.update.downloading })
+                : kiosk.update.waiting
                 ? fill(fr.box.updateWaiting, { v: kiosk.update.version, why: kiosk.update.waiting })
                 : fill(fr.box.updateReady, { v: kiosk.update.version })}
             </p>

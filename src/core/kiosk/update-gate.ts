@@ -38,18 +38,21 @@ export interface UpdateStatus {
   version: string;
   /** Pourquoi l'installation attend ; vide quand elle est lancée. */
   waiting: string;
+  /** Download progress in percent while the update is still being fetched; null once it is ready. */
+  downloading: number | null;
 }
 
 export class UpdateGate {
   private version: string | null = null;
   private waiting = "";
+  private progress: number | null = null;
   private timer: ReturnType<typeof setInterval> | undefined;
   private readonly listeners = new Set<(s: UpdateStatus | null) => void>();
 
   constructor(private readonly o: UpdateGateOptions) {}
 
   get status(): UpdateStatus | null {
-    return this.version ? { version: this.version, waiting: this.waiting } : null;
+    return this.version ? { version: this.version, waiting: this.waiting, downloading: this.progress } : null;
   }
 
   subscribe(fn: (s: UpdateStatus | null) => void): () => void {
@@ -57,15 +60,23 @@ export class UpdateGate {
     return () => this.listeners.delete(fn);
   }
 
+  /** Download in progress: shown on screen, nothing is installed. */
+  onProgress(version: string, percent: number): void {
+    this.version = version;
+    this.progress = Math.max(0, Math.min(100, Math.round(percent)));
+    this.emit();
+  }
+
   /** Une mise à jour est téléchargée : elle s'installe dès que la fenêtre le permet. */
   onDownloaded(version: string): void {
     this.version = version;
+    this.progress = null;
     this.check();
     if (this.version && !this.timer) this.timer = setInterval(() => this.check(), this.o.checkEveryMs ?? 60_000);
   }
 
   check(): void {
-    if (!this.version) return;
+    if (!this.version || this.progress !== null) return;
     const verdict = evaluateUpdateWindow(this.o.context(), (this.o.now ?? Date.now)(), this.o.marginMs);
     if (verdict.allowed) {
       clearInterval(this.timer);

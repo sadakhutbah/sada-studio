@@ -5,6 +5,23 @@ import { backoffDelay } from "../core/kiosk/backoff";
 import { registerIpc, type Kiosk } from "./ipc";
 import { log } from "./log";
 
+// Identity first: the name shown in the Dock, the menu bar, the task bar and the About box must be ours, also in development.
+// In development, keep the data directory the name used to give (the installed app has its own), so that tests never share
+// the paired-device vault with a real installation.
+const APP_NAME = "Sada Studio";
+const devUserData = app.isPackaged ? null : app.getPath("userData");
+app.setName(APP_NAME);
+if (devUserData) app.setPath("userData", devUserData);
+// Must match `appId` in electron-builder.yml: Windows groups notifications and pinned shortcuts by it.
+if (process.platform === "win32") app.setAppUserModelId("org.sadakhutbah.studio");
+app.setAboutPanelOptions({
+  applicationName: APP_NAME,
+  applicationVersion: app.getVersion(),
+  copyright: `Copyright © ${new Date().getFullYear()} Sada`,
+  website: "https://sadakhutbah.org",
+  iconPath: app.isPackaged ? join(process.resourcesPath, "icon.png") : join(app.getAppPath(), "build/icon.png"),
+});
+
 // Un boîtier n'a qu'une instance : une seconde ouverture ramène la fenêtre de la première.
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -113,7 +130,7 @@ async function requestQuit() {
   const live = kiosk?.supervisor.view.wantLive;
   const { response } = await dialog.showMessageBox({
     type: "warning",
-    title: "Quitter Sada Studio",
+    title: `Quitter ${APP_NAME}`,
     message: live ? "Un direct est en cours. Quitter l'arrêtera." : "Quitter Sada Studio ?",
     detail: "Une fois fermée, l'application ne diffusera plus les directs planifiés, jusqu'au prochain démarrage de Windows ou de l'application.",
     buttons: ["Rester", "Quitter"],
@@ -122,6 +139,20 @@ async function requestQuit() {
     noLink: true,
   });
   if (response === 1) app.quit();
+}
+
+/** macOS: a standard menu whose first entry carries the application name (About, Hide, Quit). */
+function createAppMenu() {
+  if (process.platform !== "darwin") return;
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      { role: "appMenu" },
+      { role: "editMenu" },
+      { role: "windowMenu" },
+    ]),
+  );
+  // Development runs the stock Electron binary: at least show our icon in the Dock.
+  if (!app.isPackaged) app.dock?.setIcon(nativeImage.createFromPath(iconPath()));
 }
 
 function createTray() {
@@ -190,6 +221,7 @@ void app.whenReady().then(() => {
     app.setLoginItemSettings({ openAtLogin: true, args: ["--autostart"] });
   }
   kiosk = registerIpc(app.getVersion());
+  createAppMenu();
   createTray();
   win = createWindow();
   if (dev && process.env.SADA_STUDIO_INSTANCE && kiosk.supervisor.view.phase === "unpaired") {

@@ -69,15 +69,33 @@ Le client Sada et le secret de l'appareil vivent dans le processus principal ; l
 
 ## Mise à jour automatique
 
-`electron-updater` lit les releases GitHub de `sadakhutbah/sada-studio` (`publish` dans `electron-builder.yml`, aucune release n'est créée par le code). Le téléchargement est libre, l'**installation** attend : jamais pendant un direct, un ordre live ou un créneau en cours, ni dans les 30 min avant un créneau (`UpdateGate`). Inactive hors application installée.
+`electron-updater` avec le fournisseur **générique** : une simple URL HTTP(S) qui sert `latest.yml` (Windows), `latest-mac.yml`, `latest-linux.yml` et les installeurs. Aucun jeton n'est requis chez les mosquées et le dépôt reste privé. L'URL par défaut est écrite dans l'installeur depuis `publish.url` (`electron-builder.yml`, **à confirmer** : `https://updates.sadakhutbah.org/studio/`).
 
-Pour publier : monter `version` dans `package.json`, `GH_TOKEN` (droit `contents:write`) dans l'environnement, puis `npx electron-builder --win --publish always` (ou un workflow sur tag, aujourd'hui `--publish never`). La release doit contenir `latest.yml`, l'installeur `.exe` et son `.blockmap`, générés par electron-builder.
-**Dépôt privé** : le client ne peut pas lire des releases privées sans jeton. Choix à faire : héberger les mises à jour dans un dépôt public dédié (`publish.repo`), ou un serveur statique (`provider: generic`). Ne jamais embarquer de jeton dans l'application.
+- Vérification 15 s après le démarrage, puis toutes les 6 h ; téléchargement en arrière-plan, avec la progression à l'écran (libellés dans `strings.ts`, `box.update*`).
+- **Installation** : jamais pendant un direct, un ordre live ou un créneau en cours, ni dans les 30 min avant un créneau (`UpdateGate`) ; l'application redémarre ensuite.
+- Inactive hors application installée.
+- Surcharge par poste, sans reconstruire : variable `SADA_STUDIO_UPDATE_URL` (et `SADA_STUDIO_UPDATE_CHANNEL`), sinon fichier `update.json` (`{"url": "https://…/", "channel": "latest"}`) dans le dossier de données de l'application. `https` obligatoire, `http` seulement sur `localhost`.
+
+Publier : monter `version` dans `package.json`, pousser un tag `vX.Y.Z`. Le workflow construit Windows, macOS et Linux, garde les fichiers en artefacts, puis (job `publish-feed`) les copie par rsync sur le serveur de mises à jour si les secrets `UPDATE_SSH_HOST`, `UPDATE_SSH_USER`, `UPDATE_SSH_KEY`, `UPDATE_SSH_PATH` existent ; sinon rien n'est publié. Aucune release GitHub n'est créée.
+
+Essai local de bout en bout : construire deux versions (`electron-builder --linux -c.directories.output=/tmp/v2 -c.extraMetadata.version=0.1.1`), servir le dossier de la plus récente (`python3 -m http.server 8099 --bind 127.0.0.1`), lancer l'ancienne sous `xvfb-run` avec `SADA_STUDIO_UPDATE_URL=http://127.0.0.1:8099/` et lire `studio.log`.
+
+## Identité et icônes
+
+Nom `Sada Studio`, `appId` `org.sadakhutbah.studio` (ne plus le changer : il identifie l'application chez Windows et pour les mises à jour), éditeur `Sada`. `app.setName`, le menu macOS, le panneau « À propos » et l'identifiant Windows sont posés dans `src/main/index.ts`, y compris en développement. Sur Mac, `npm install` renomme aussi l'`Electron.app` de développement (`scripts/brand-dev-electron.mjs`) pour que le Dock et la barre de menus affichent Sada Studio avec `npm run dev`.
+
+Les icônes (`build/icon.icns`, `icon.ico`, `icon.png`, `icons/*.png`) viennent de `favicon.svg` ; `npm run icons` les régénère.
 
 ## Intégration continue et installeurs
 
-`.github/workflows/ci.yml` : lint, typecheck, tests et build à chaque push et pull request. Sur un tag `vX.Y.Z`, construction des installeurs Windows (NSIS) et macOS (dmg, zip) en artefacts du workflow.
+`.github/workflows/ci.yml` : lint, typecheck, tests et build à chaque push et pull request. Sur un tag `vX.Y.Z`, construction des installeurs Windows (NSIS), macOS (dmg, zip) et Linux (AppImage) en artefacts du workflow, puis copie vers le serveur de mises à jour (voir plus haut). Sous Linux/WSL, l'installeur NSIS ne se construit pas sans `wine` : le build Windows se fait en CI.
 
 ## Signature
 
-Les installeurs ne sont **pas signés** pour l'instant : Windows SmartScreen et macOS Gatekeeper afficheront un avertissement (macOS : clic droit puis Ouvrir). Pour signer : certificat Authenticode (`CSC_LINK`, `CSC_KEY_PASSWORD`) côté Windows ; Developer ID et notarisation Apple (`CSC_LINK`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`) côté macOS, puis retirer `identity: null` dans `electron-builder.yml`.
+Aujourd'hui rien n'est signé. Le workflow active la signature seulement si les secrets existent :
+
+| Plateforme | Secrets | Sans signature | Avec signature |
+| --- | --- | --- | --- |
+| macOS | `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD` (Developer ID, .p12), `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Gatekeeper bloque (clic droit, Ouvrir) et **la mise à jour automatique ne fonctionne pas** | Apple Developer Program, environ 99 $/an : signature, notarisation, mise à jour automatique |
+| Windows | `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD` | Fonctionne, avertissement SmartScreen à l'installation, y compris pour les mises à jour tant que la réputation n'est pas établie | Certificat de signature de code (environ 100 à 400 $/an selon l'autorité) ou Azure Trusted Signing (environ 10 $/mois, éligibilité selon le pays et l'organisation) |
+| Linux | aucun | AppImage, mise à jour automatique possible | sans objet |
