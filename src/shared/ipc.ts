@@ -1,4 +1,5 @@
 import type { StreamMeta } from "../core/api/types";
+import type { CalibrationView, CaptureSettings, CaptureView } from "../core/capture/settings";
 import type { WindowsFacts } from "../core/health/health";
 import type { ClientReport, KioskView } from "../core/kiosk/supervisor";
 import type { UpdateStatus } from "../core/kiosk/update-gate";
@@ -9,8 +10,33 @@ export type IpcResult<T> = { ok: true; value: T } | { ok: false; status: number;
 /** The device state as the UI sees it: never the device secret. */
 export type KioskSnapshot = KioskView & { update: UpdateStatus | null };
 
+/** Media units of the IP camera capture (fragmented MP4) pushed to the player of the UI. */
+export interface CaptureMedia {
+  /** Initialization segment (ftyp + moov): starts a new timeline segment (first start, restart, new window). */
+  init: boolean;
+  data: Uint8Array;
+}
+
+/** "IP camera + local microphone" source, driven by the main process (ffmpeg). */
+export interface CaptureBridge {
+  get(): Promise<CaptureView>;
+  onChange(cb: (v: CaptureView) => void): () => void;
+  onMedia(cb: (m: CaptureMedia) => void): () => void;
+  /** Source choice, RTSP address, sound card. */
+  setSettings(s: CaptureSettings): Promise<IpcResult<CaptureView>>;
+  /** Starts the capture if needed and (re)sends the current initialization segment. */
+  acquire(): Promise<IpcResult<null>>;
+  release(): Promise<IpcResult<null>>;
+  /** DirectShow sound cards, re-read. */
+  devices(): Promise<string[]>;
+  /** Audio delay in ms (any value: rounded to the 50 ms step). */
+  setDelay(ms: number): Promise<IpcResult<CaptureView>>;
+  calibrate(): Promise<IpcResult<CalibrationView>>;
+}
+
 /** What the main process exposes to the UI (`window.studio`). */
 export interface StudioBridge {
+  capture: CaptureBridge;
   kiosk: {
     get(): Promise<KioskSnapshot>;
     onChange(cb: (s: KioskSnapshot) => void): () => void;

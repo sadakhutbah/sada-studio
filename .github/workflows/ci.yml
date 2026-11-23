@@ -56,6 +56,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - name: ffmpeg for the Windows installer (IP camera source)
+        if: matrix.name == 'windows'
+        run: node scripts/fetch-ffmpeg-win.mjs
       - name: Build installers
         shell: bash
         run: |

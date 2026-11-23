@@ -42,6 +42,10 @@ win:
   target:
     - { target: nsis, arch: [x64] }
   artifactName: Sada-Studio-${version}-setup.${ext}
+  # ffmpeg for the IP camera + local microphone source: shipped next to the application (resources/ffmpeg/ffmpeg.exe),
+  # fetched and checksummed by scripts/fetch-ffmpeg-win.mjs (`npm run dist:win`).
+  extraResources:
+    - { from: build/ffmpeg/win, to: ffmpeg }
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

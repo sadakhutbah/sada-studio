@@ -1,21 +1,51 @@
 import { FatalError } from "../errors";
 import { t } from "../messages";
-import type { MediaSourceStrategy, SourceOptions } from "./types";
+import type { CalibrationOutcome } from "../capture/calibrator";
+import { AudioDelay } from "./audio-delay";
+import type { MediaSourceStrategy, SourceOptions, SourceSync } from "./types";
+import { BrowserSeriesRecorder, calibrateWebcam, type SeriesRecorder } from "./webcam-calibration";
 
-const key = (o: SourceOptions) => JSON.stringify(o);
+/** The audio delay is applied live (never restarts the capture): it is not part of the identity of the stream. */
+const key = (o: SourceOptions) => JSON.stringify({ ...o, audioDelayMs: undefined });
 
 /** Camera + microphone via getUserMedia. `devices` is injectable (tests, other environments). */
 export class CameraSource implements MediaSourceStrategy {
   readonly id = "camera";
   private stream: MediaStream | null = null;
+  private raw: MediaStream | null = null;
+  private delay: AudioDelay | null = null;
   private streamKey = "";
   private readonly endedListeners = new Set<() => void>();
 
-  constructor(private readonly devices: Pick<MediaDevices, "getUserMedia"> = navigator.mediaDevices) {}
+  constructor(
+    private readonly devices: Pick<MediaDevices, "getUserMedia"> = navigator.mediaDevices,
+    /** Audio delay stage; `null` = no Web Audio (the stream is used as is, without synchronization). */
+    private readonly createDelay: (raw: MediaStream, ms: number) => AudioDelay | null = (raw, ms) => {
+      try {
+        return new AudioDelay(raw, ms);
+      } catch {
+        return null;
+      }
+    },
+  ) {}
+
+  /** Webcam strategy of the synchronization: live delay + clap calibration (the analysis is shared with the IP camera). */
+  readonly sync: SourceSync = {
+    setAudioDelay: (ms) => this.delay?.setDelayMs(ms),
+    calibrate: (seconds = 10) => this.calibrate(seconds),
+  };
+
+  /** Clap calibration on the open stream (microphone measured before the delay). */
+  async calibrate(seconds = 10, recorder?: SeriesRecorder): Promise<CalibrationOutcome> {
+    const rec = recorder ?? (this.raw && this.delay?.analyser ? new BrowserSeriesRecorder(this.raw, this.delay.analyser, this.delay.inputLatencyS) : null);
+    if (!rec) return { ok: false, reason: "ffmpeg", detail: t("media.notFound") };
+    return calibrateWebcam(rec, seconds);
+  }
 
   async acquire(options: SourceOptions): Promise<MediaStream> {
     const k = key(options);
-    if (this.stream && k === this.streamKey && this.stream.getTracks().every((t) => t.readyState === "live")) {
+    if (this.stream && this.raw && k === this.streamKey && this.raw.getTracks().every((t) => t.readyState === "live")) {
+      if (options.audioDelayMs !== undefined) this.delay?.setDelayMs(options.audioDelayMs);
       return this.stream;
     }
     this.release();
@@ -39,13 +69,19 @@ export class CameraSource implements MediaSourceStrategy {
       throw new FatalError(describeMediaError(e), "capture");
     }
     for (const t of stream.getTracks()) t.addEventListener("ended", () => this.endedListeners.forEach((cb) => cb()));
-    this.stream = stream;
+    this.raw = stream;
+    this.delay = this.createDelay(stream, options.audioDelayMs ?? 0);
+    this.stream = this.delay?.output ?? stream;
     this.streamKey = k;
-    return stream;
+    return this.stream;
   }
 
   release(): void {
+    this.raw?.getTracks().forEach((t) => t.stop());
     this.stream?.getTracks().forEach((t) => t.stop());
+    this.delay?.close();
+    this.delay = null;
+    this.raw = null;
     this.stream = null;
     this.streamKey = "";
   }

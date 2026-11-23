@@ -1,0 +1,30 @@
+# Simulated IP camera server (RTSP/TCP on 127.0.0.1:8554). Test pattern only, never exposed beyond this PC.
+#   Publisher: local ffmpeg (camera.sh), no password.   Reader: user "studio", password "studio".
+logLevel: info
+rtmp: no
+hls: no
+webrtc: no
+srt: no
+api: no
+metrics: no
+playback: no
+pprof: no
+rtspAddress: 127.0.0.1:8554
+rtspTransports: [tcp]
+rtpAddress: 127.0.0.1:8000
+rtcpAddress: 127.0.0.1:8001
+
+authMethod: internal
+authInternalUsers:
+  - user: any
+    pass:
+    ips: ["127.0.0.1", "::1"]
+    permissions:
+      - action: publish
+  - user: studio
+    pass: studio
+    permissions:
+      - action: read
+
+paths:
+  cam:

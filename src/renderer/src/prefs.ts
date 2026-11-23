@@ -1,4 +1,5 @@
 import { DEFAULT_AUDIO, type AudioSettings } from "@core/sources/types";
+import { normalizeDelay } from "@core/capture/types";
 import type { StreamKind } from "@core/api/types";
 
 export interface Prefs {
@@ -8,21 +9,29 @@ export interface Prefs {
   videoDeviceId: string;
   audioDeviceId: string;
   audio: AudioSettings;
+  /** Webcam microphone delay (ms) per camera/microphone pair, see `webcamPairKey`. */
+  webcamDelays: Record<string, number>;
   /** Last typed instance address. */
   instance: string;
 }
 
 const KEY = "sada-studio.prefs";
-const DEFAULTS: Prefs = { kind: "khutba", title: "", videoDeviceId: "", audioDeviceId: "", audio: DEFAULT_AUDIO, instance: "" };
+const DEFAULTS: Prefs = { kind: "khutba", title: "", videoDeviceId: "", audioDeviceId: "", audio: DEFAULT_AUDIO, webcamDelays: {}, instance: "" };
 
 /** Non-secret preferences, kept in the UI's local storage. */
 export function loadPrefs(): Prefs {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? "{}") as Partial<Prefs>;
-    return { ...DEFAULTS, ...raw, audio: { ...DEFAULT_AUDIO, ...raw.audio } };
+    return { ...DEFAULTS, ...raw, audio: { ...DEFAULT_AUDIO, ...raw.audio }, webcamDelays: { ...raw.webcamDelays } };
   } catch {
     return DEFAULTS;
   }
 }
 
 export const savePrefs = (p: Prefs) => localStorage.setItem(KEY, JSON.stringify(p));
+
+/** Identity of a camera/microphone pair (the default device when none is chosen). */
+export const webcamPairKey = (p: Pick<Prefs, "videoDeviceId" | "audioDeviceId">) => `${p.videoDeviceId || "default"}|${p.audioDeviceId || "default"}`;
+
+/** Delay saved for the selected pair, 0 when never set. */
+export const webcamDelayOf = (p: Prefs): number => normalizeDelay(p.webcamDelays[webcamPairKey(p)] ?? 0);

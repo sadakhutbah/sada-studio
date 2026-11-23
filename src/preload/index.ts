@@ -1,7 +1,27 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { KioskSnapshot, StudioBridge } from "../shared/ipc";
+import type { CaptureView } from "../core/capture/settings";
+import type { CaptureMedia, KioskSnapshot, StudioBridge } from "../shared/ipc";
 
 const bridge: StudioBridge = {
+  capture: {
+    get: () => ipcRenderer.invoke("capture:get"),
+    onChange: (cb) => {
+      const listener = (_e: unknown, v: CaptureView) => cb(v);
+      ipcRenderer.on("capture:changed", listener);
+      return () => void ipcRenderer.removeListener("capture:changed", listener);
+    },
+    onMedia: (cb) => {
+      const listener = (_e: unknown, m: CaptureMedia) => cb(m);
+      ipcRenderer.on("capture:media", listener);
+      return () => void ipcRenderer.removeListener("capture:media", listener);
+    },
+    setSettings: (s) => ipcRenderer.invoke("capture:set-settings", s),
+    acquire: () => ipcRenderer.invoke("capture:acquire"),
+    release: () => ipcRenderer.invoke("capture:release"),
+    devices: () => ipcRenderer.invoke("capture:devices"),
+    setDelay: (ms) => ipcRenderer.invoke("capture:set-delay", ms),
+    calibrate: () => ipcRenderer.invoke("capture:calibrate"),
+  },
   kiosk: {
     get: () => ipcRenderer.invoke("kiosk:get"),
     onChange: (cb) => {

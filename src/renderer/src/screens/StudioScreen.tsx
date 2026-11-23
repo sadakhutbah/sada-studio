@@ -8,8 +8,10 @@ import { Backoff } from "@core/kiosk/backoff";
 import { describeMediaError } from "@core/sources/camera";
 import { formatBitrate, formatDuration } from "@core/stats";
 import type { KioskSnapshot } from "@shared/ipc";
-import { useBroadcast, useDevices, useHealth, useKeeper, useLevel, useNow, useReporter } from "../hooks";
-import { loadPrefs, savePrefs, type Prefs } from "../prefs";
+import type { CalibrationView, CaptureSettings } from "@core/capture/settings";
+import { normalizeDelay } from "@core/capture/types";
+import { useBroadcast, useCapture, useDevices, useHealth, useKeeper, useLevel, useNow, useReporter } from "../hooks";
+import { loadPrefs, savePrefs, webcamDelayOf, webcamPairKey, type Prefs } from "../prefs";
 import { fill, fr } from "../strings";
 import { Brand, Btn, Card, ErrorBox, Field, inputClass, Kicker, StatusPill, Title, type PillKey } from "../ui";
 import { HealthPanel } from "./HealthPanel";
@@ -42,15 +44,46 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
       return next;
     });
 
+  const { view: capture, audioInputs, refreshAudioInputs } = useCapture();
+  const ipMode = capture?.settings.sourceKind === "ip-camera";
+  const rtspUrl = capture?.settings.rtspUrl ?? "";
+  const audioDevice = capture?.settings.audioDevice ?? "";
+  const webcamDelay = webcamDelayOf(prefs);
+  const [webcamCalibration, setWebcamCalibration] = useState<CalibrationView>({ status: "idle" });
+  const setWebcamDelay = (ms: number) => {
+    const delayMs = normalizeDelay(ms);
+    source.syncOf("camera")?.setAudioDelay(delayMs);
+    update({ webcamDelays: { ...prefs.webcamDelays, [webcamPairKey(prefs)]: delayMs } });
+  };
+  const calibrateWebcam = async () => {
+    const sync = source.syncOf("camera");
+    if (!sync) return;
+    const seconds = 10;
+    setWebcamCalibration({ status: "running", seconds });
+    const result = await sync.calibrate(seconds);
+    if (result.ok) setWebcamDelay(result.delayMs);
+    setWebcamCalibration({ status: "done", result, at: Date.now() });
+  };
   const sourceOptions = useMemo<SourceOptions>(
-    () => ({ videoDeviceId: prefs.videoDeviceId || undefined, audioDeviceId: prefs.audioDeviceId || undefined, audio: prefs.audio }),
-    [prefs.videoDeviceId, prefs.audioDeviceId, prefs.audio],
+    () => ({
+      sourceKind: ipMode ? "ip-camera" : "camera",
+      ipCamera: ipMode ? { rtspUrl, audioDevice } : undefined,
+      videoDeviceId: prefs.videoDeviceId || undefined,
+      audioDeviceId: prefs.audioDeviceId || undefined,
+      audio: prefs.audio,
+      audioDelayMs: ipMode ? undefined : webcamDelay,
+    }),
+    [ipMode, rtspUrl, audioDevice, prefs.videoDeviceId, prefs.audioDeviceId, prefs.audio, webcamDelay],
   );
+  const setCaptureSettings = (patch: Partial<CaptureSettings>) => {
+    if (capture) void window.studio.capture.setSettings({ ...capture.settings, ...patch });
+  };
 
   // Preview (and arming): the same capture is then used for the broadcast. Camera missing: retry with bounded growing delays.
   const captureBackoff = useRef(new Backoff({ baseMs: 3_000, maxMs: 60_000, jitter: 0.2 }));
   useEffect(() => {
-    if (active) return;
+    // Wait for the source choice (held by the main process) before opening anything.
+    if (active || !capture) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     source
@@ -72,14 +105,19 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
       clearTimeout(timer);
     };
     // A re-plugged camera (`cameras.length`) restarts the capture right away, without waiting for the next attempt.
-  }, [sourceOptions, active, source, captureTry, cameras.length]);
+  }, [sourceOptions, active, source, captureTry, ipMode ? 0 : cameras.length, capture === null]); // eslint-disable-line
 
   useEffect(() => {
     if (video.current) video.current.srcObject = stream;
   }, [stream]);
 
-  const retry = useKeeper(live, kiosk.wantLive, sourceOptions);
-  const health = useHealth(kiosk, cameras.length, microphones.length);
+  const retry = useKeeper(live, kiosk.wantLive && capture !== null, sourceOptions);
+  // With the IP camera, the PC's own devices do not matter: the capture's tracks are what counts.
+  const health = useHealth(
+    kiosk,
+    ipMode ? (stream?.getVideoTracks().length ?? 0) : cameras.length,
+    ipMode ? (stream?.getAudioTracks().length ?? 0) : microphones.length,
+  );
   useReporter(state, stats.bitrateKbps, kiosk.wantLive, stream, health);
 
   const elapsed = state.startedAt ? now - state.startedAt : 0;
@@ -176,6 +214,21 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
               )}
             </div>
             <div className="px-4.5 py-3">
+              {ipMode && capture && (
+                <p
+                  role="status"
+                  className={`m-0 mb-2 text-[0.85rem] ${capture.alert ? "text-live" : capture.state.status === "running" ? "text-green" : "text-warn"}`}
+                >
+                  <span className="font-semibold">{fr.ipCamera.kindIp}</span>
+                  {" : "}
+                  {capture.alert
+                    ? fr.ipCamera.alert
+                    : capture.state.status === "reconnecting"
+                      ? fill(fr.ipCamera.state.reconnecting, { n: capture.state.attempt })
+                      : fr.ipCamera.state[capture.state.status]}
+                  {capture.state.status !== "running" && capture.state.lastError ? ` — ${capture.state.lastError}` : ""}
+                </p>
+              )}
               <div
                 role="meter"
                 aria-label={fr.preview.level}
@@ -306,6 +359,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
                 <input
                   value={prefs.title}
                   placeholder={fr.live.titlePlaceholder}
+                  autoComplete="off"
                   disabled={locked}
                   onChange={(e) => update({ title: e.target.value })}
                   className={inputClass}
@@ -323,7 +377,21 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
         </aside>
       </main>
       {settingsOpen && (
-        <SettingsPanel prefs={prefs} cameras={cameras} microphones={microphones} locked={locked} onChange={update} onClose={closeSettings} />
+        <SettingsPanel
+          prefs={prefs}
+          cameras={cameras}
+          microphones={microphones}
+          locked={locked}
+          onChange={update}
+          onClose={closeSettings}
+          capture={capture}
+          audioInputs={audioInputs}
+          onCaptureSettings={setCaptureSettings}
+          onRefreshAudioInputs={refreshAudioInputs}
+          onCaptureDelay={(ms) => void window.studio.capture.setDelay(ms)}
+          onCalibrate={() => void window.studio.capture.calibrate()}
+          webcam={{ delayMs: webcamDelay, calibration: webcamCalibration, canCalibrate: stream !== null && !ipMode, onDelay: setWebcamDelay, onCalibrate: () => void calibrateWebcam() }}
+        />
       )}
     </div>
   );

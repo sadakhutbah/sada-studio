@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CaptureView } from "@core/capture/settings";
 import { createLevelMeter } from "@core/audio/meter";
 import { LiveKeeper } from "@core/kiosk/live-keeper";
 import { evaluateHealth, toChecks, type HealthItem } from "@core/health/health";
@@ -94,6 +95,24 @@ export function useKiosk(): KioskSnapshot | null {
     };
   }, []);
   return snap;
+}
+
+/** State of the IP camera capture and its sound card list, held by the main process. */
+export function useCapture(): { view: CaptureView | null; audioInputs: string[]; refreshAudioInputs: () => void } {
+  const [view, setView] = useState<CaptureView | null>(null);
+  const [audioInputs, setAudioInputs] = useState<string[]>([]);
+  const refreshAudioInputs = useCallback(() => void window.studio.capture.devices().then(setAudioInputs), []);
+  useEffect(() => {
+    let alive = true;
+    const off = window.studio.capture.onChange((v) => alive && setView(v));
+    void window.studio.capture.get().then((v) => alive && setView((cur) => cur ?? v));
+    refreshAudioInputs();
+    return () => {
+      alive = false;
+      off();
+    };
+  }, [refreshAudioInputs]);
+  return { view, audioInputs, refreshAudioInputs };
 }
 
 /**
