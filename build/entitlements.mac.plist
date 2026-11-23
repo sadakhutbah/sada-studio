@@ -5,6 +5,8 @@
   <!-- Required by the hardened runtime (needed for notarization) with Electron's JIT. -->
   <key>com.apple.security.cs.allow-jit</key><true/>
   <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+  <!-- Ad-hoc builds (no certificate): the Electron frameworks carry another signature. -->
+  <key>com.apple.security.cs.disable-library-validation</key><true/>
   <!-- Camera and microphone: the whole point of the application. -->
   <key>com.apple.security.device.camera</key><true/>
   <key>com.apple.security.device.audio-input</key><true/>

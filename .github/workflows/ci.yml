@@ -71,6 +71,9 @@ jobs:
           if [ -z "$CSC_LINK" ]; then
             export CSC_IDENTITY_AUTO_DISCOVERY=false
             echo "No signing certificate for ${{ matrix.name }}: unsigned build."
+            # macOS without a certificate: ad-hoc sign the whole bundle so it carries its bundle id
+            # (otherwise only the linker signature "Electron" remains and the camera/mic permission is not remembered).
+            if [ "${{ matrix.name }}" = "mac" ]; then flags="$flags -c.mac.identity=-"; fi
           elif [ "${{ matrix.name }}" = "mac" ]; then
             # Notarize only if every Apple credential is present.
             if [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
