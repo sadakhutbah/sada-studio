@@ -13,6 +13,7 @@ import { normalizeDelay } from "@core/capture/types";
 import { useBroadcast, useCapture, useDevices, useHealth, useKeeper, useLevel, useNow, useReporter } from "../hooks";
 import { loadPrefs, savePrefs, webcamDelayOf, webcamPairKey, type Prefs } from "../prefs";
 import { fill, fr } from "../strings";
+import { t } from "@core/messages";
 import { Brand, Btn, Card, ErrorBox, Field, inputClass, Kicker, StatusPill, Title, type PillKey } from "../ui";
 import { HealthPanel } from "./HealthPanel";
 import { SettingsPanel } from "./SettingsPanel";
@@ -203,9 +204,14 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
             <div className="relative aspect-video overflow-hidden rounded-t-[10px] bg-night">
               <video ref={video} autoPlay muted playsInline className="size-full object-contain" />
               {!stream && (
-                <p className="absolute inset-0 m-0 grid place-items-center px-6 text-center text-night-muted">
-                  {captureError ? `${captureError} ${fr.preview.retry}` : fr.preview.empty}
-                </p>
+                <div className="absolute inset-0 grid place-content-center gap-3 px-6 text-center text-night-muted">
+                  <p className="m-0">{captureError ? `${captureError} ${fr.preview.retry}` : fr.preview.empty}</p>
+                  {captureError === t("media.deniedSystem") && (
+                    <button type="button" className="mx-auto underline" onClick={() => void window.studio.media.openSettings("microphone")}>
+                      {fr.preview.openSettings}
+                    </button>
+                  )}
+                </div>
               )}
               {state.status === "reconnecting" && (
                 <p className="absolute inset-x-0 bottom-0 m-0 bg-warn-bg px-4 py-2 text-[0.9rem] text-warn">

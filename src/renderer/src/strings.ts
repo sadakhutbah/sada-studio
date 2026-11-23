@@ -106,7 +106,7 @@ export const fr = {
     noiseSuppression: "Réduction de bruit",
     autoGainControl: "Gain automatique",
   },
-  preview: { empty: "Aperçu indisponible", level: "Niveau du micro", loading: "Ouverture de la caméra…", retry: "Nouvel essai automatique dans quelques secondes." },
+  preview: { empty: "Aperçu indisponible", level: "Niveau du micro", loading: "Ouverture de la caméra…", retry: "Nouvel essai automatique dans quelques secondes.", openSettings: "Ouvrir les Réglages Système" },
   status: {
     idle: "Prêt",
     standby: "En veille",

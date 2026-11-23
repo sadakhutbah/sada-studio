@@ -22,6 +22,10 @@ const bridge: StudioBridge = {
     setDelay: (ms) => ipcRenderer.invoke("capture:set-delay", ms),
     calibrate: () => ipcRenderer.invoke("capture:calibrate"),
   },
+  media: {
+    access: () => ipcRenderer.invoke("media:access"),
+    openSettings: (kind) => ipcRenderer.invoke("media:open-settings", kind),
+  },
   kiosk: {
     get: () => ipcRenderer.invoke("kiosk:get"),
     onChange: (cb) => {

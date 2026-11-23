@@ -27,6 +27,11 @@ export class CameraSource implements MediaSourceStrategy {
         return null;
       }
     },
+    /** System permission (macOS), checked before getUserMedia: a refused or pending permission must not re-open the prompt. */
+    private readonly access: () => Promise<{ camera: boolean; microphone: boolean }> = () =>
+      typeof window !== "undefined" && window.studio?.media
+        ? window.studio.media.access()
+        : Promise.resolve({ camera: true, microphone: true }),
   ) {}
 
   /** Webcam strategy of the synchronization: live delay + clap calibration (the analysis is shared with the IP camera). */
@@ -49,6 +54,8 @@ export class CameraSource implements MediaSourceStrategy {
       return this.stream;
     }
     this.release();
+    const granted = await this.access();
+    if (!granted.camera || !granted.microphone) throw new FatalError(t("media.deniedSystem"), "capture");
     const v = options.video ?? { width: 1920, height: 1080, frameRate: 30 };
     let stream: MediaStream;
     try {
