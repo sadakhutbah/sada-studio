@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import type { CalibrationIo } from "../core/capture/calibrator";
 import type { ProcessSpawner } from "../core/capture/controller";
-import { dshowListArgs, parseDshowAudioDevices } from "../core/capture/devices";
+import { avfoundationListArgs, dshowListArgs, parseAvfoundationAudioDevices, parseDshowAudioDevices } from "../core/capture/devices";
+import type { AudioBackend } from "../core/capture/types";
 
 /** Node-only (no Electron import) so that the integration tests use the exact same code as the application. */
 
@@ -59,8 +60,8 @@ export const nodeCalibrationIo = (ffmpegPath = "ffmpeg"): CalibrationIo => ({
 });
 
 /**
- * ffmpeg for this installation: SADA_FFMPEG, else the copy shipped next to the application (installer, Windows),
- * else the one on the PATH.
+ * ffmpeg for this installation: SADA_FFMPEG, else the copy shipped next to the application (Windows installer, macOS
+ * app), else Homebrew's on macOS (an app started from the Finder does not get the shell PATH), else the one on the PATH.
  */
 export function resolveFfmpeg(resourcesDir: string | null, platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env): string {
   if (env.SADA_FFMPEG) return env.SADA_FFMPEG;
@@ -68,13 +69,23 @@ export function resolveFfmpeg(resourcesDir: string | null, platform: NodeJS.Plat
     const bundled = join(resourcesDir, "ffmpeg", platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
     if (existsSync(bundled)) return bundled;
   }
+  if (platform === "darwin") {
+    const brew = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"].find((p) => existsSync(p));
+    if (brew) return brew;
+  }
   return "ffmpeg";
 }
 
-/** DirectShow audio inputs of this PC (Windows); empty elsewhere or when ffmpeg is missing. */
-export function listDshowAudioDevices(ffmpegPath = "ffmpeg"): Promise<string[]> {
+/** Audio inputs of this machine: DirectShow (Windows) or AVFoundation (macOS); empty elsewhere or when ffmpeg is missing. */
+export function listAudioDevices(backend: AudioBackend, ffmpegPath = "ffmpeg"): Promise<string[]> {
+  const kinds: Partial<Record<AudioBackend, { args: string[]; parse: (stderr: string) => string[] }>> = {
+    dshow: { args: dshowListArgs(), parse: parseDshowAudioDevices },
+    avfoundation: { args: avfoundationListArgs(), parse: parseAvfoundationAudioDevices },
+  };
+  const kind = kinds[backend];
+  if (!kind) return Promise.resolve([]);
   return new Promise((resolve) => {
     // ffmpeg exits non-zero after listing: the list is on stderr whatever the code.
-    execFile(ffmpegPath, dshowListArgs(), { windowsHide: true, timeout: 10_000 }, (_e, _out, stderr) => resolve(parseDshowAudioDevices(String(stderr))));
+    execFile(ffmpegPath, kind.args, { windowsHide: true, timeout: 10_000 }, (_e, _out, stderr) => resolve(kind.parse(String(stderr))));
   });
 }

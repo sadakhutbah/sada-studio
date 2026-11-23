@@ -17,7 +17,7 @@ import {
 import { AUDIO_DELAY_STEP_MS, normalizeDelay, type AudioBackend, type AudioOffsetStore } from "../core/capture/types";
 import { t } from "../core/messages";
 import type { FileCaptureSettingsStore } from "./capture-files";
-import { listDshowAudioDevices, nodeCalibrationIo, spawnFfmpeg } from "./ffmpeg-io";
+import { listAudioDevices, nodeCalibrationIo, spawnFfmpeg } from "./ffmpeg-io";
 
 export interface CaptureServiceDeps {
   settings: FileCaptureSettingsStore;
@@ -102,7 +102,7 @@ export class CaptureService {
   }
 
   async refreshDevices(): Promise<string[]> {
-    this.devices = this.backend === "dshow" && this.ffmpegOk ? await listDshowAudioDevices(this.deps.ffmpegPath) : [];
+    this.devices = this.ffmpegOk ? await listAudioDevices(this.backend, this.deps.ffmpegPath) : [];
     this.publish();
     return this.devices;
   }

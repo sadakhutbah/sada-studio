@@ -21,6 +21,7 @@
     "test": "vitest run",
     "mock": "node scripts/mock-sada.mjs",
     "dist": "electron-vite build && electron-builder",
+    "dist:mac": "node scripts/fetch-ffmpeg-mac.mjs && electron-vite build && electron-builder --mac --publish never",
     "dist:win": "node scripts/fetch-ffmpeg-win.mjs && electron-vite build && electron-builder --win --publish never",
     "icons": "node scripts/make-icons.mjs",
     "postinstall": "node scripts/brand-dev-electron.mjs"

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { calibrateClap, type CalibrationIo } from "../src/core/capture/calibrator";
 import { computeClapOffset, detectEvents, parseMetadataSeries, type Sample } from "../src/core/capture/calibration";
 import { CaptureController, deviceKey, type RunningProcess } from "../src/core/capture/controller";
-import { dshowListArgs, parseDshowAudioDevices } from "../src/core/capture/devices";
+import { avfoundationListArgs, dshowListArgs, parseAvfoundationAudioDevices, parseDshowAudioDevices } from "../src/core/capture/devices";
 import { IP_CAMERA_SOURCE_ID, IpCameraLocalAudioSource, audioFilter, defaultCaptureSources } from "../src/core/capture/ip-camera-source";
 import { INITIAL_CAPTURE_STATE, isProlongedOutage, transition } from "../src/core/capture/machine";
 import { normalizeDelay, type IpCameraConfig } from "../src/core/capture/types";
@@ -263,5 +263,26 @@ describe("DirectShow device listing", () => {
     const real = '[in#0 @ 0000027c9a8dfd40] "NexiGo N940P 2K Webcam" (video)\n[in#0 @ 0000027c9a8dfd40]   Alternative name "@device_pnp_x"\n[in#0 @ 0000027c9a8dfd40] "Microphone (6- Arctis Nova Pro Wireless)" (audio)\n[in#0 @ 0000027c9a8dfd40]   Alternative name "@device_cm_y"\n[in#0 @ 0000027c9a8dfd40] "CABLE-C Output (VB-Audio Cable C)" (audio)\n';
     expect(parseDshowAudioDevices(real)).toEqual(["Microphone (6- Arctis Nova Pro Wireless)", "CABLE-C Output (VB-Audio Cable C)"]);
     expect(dshowListArgs()).toContain("dshow");
+  });
+});
+
+describe("AVFoundation device listing", () => {
+  it("keeps the audio section only", () => {
+    const out = [
+      "[AVFoundation indev @ 0x7f8] AVFoundation video devices:",
+      "[AVFoundation indev @ 0x7f8] [0] FaceTime HD Camera",
+      "[AVFoundation indev @ 0x7f8] [1] Capture screen 0",
+      "[AVFoundation indev @ 0x7f8] AVFoundation audio devices:",
+      "[AVFoundation indev @ 0x7f8] [0] Microsoft Teams Audio",
+      "[AVFoundation indev @ 0x7f8] [1] MacBook Pro Microphone",
+      "[AVFoundation indev @ 0x7f8] [2] USB Audio CODEC (2- ch)",
+      '[in#0 @ 0x600] Error opening input: Input/output error',
+    ].join("\n");
+    expect(parseAvfoundationAudioDevices(out)).toEqual(["Microsoft Teams Audio", "MacBook Pro Microphone", "USB Audio CODEC (2- ch)"]);
+    expect(parseAvfoundationAudioDevices("")).toEqual([]);
+    // ffmpeg 9.1 on macOS (real output): uid suffix.
+    const real = "[AVFoundation indev @ 0x121a07a80] AVFoundation video devices:\n[AVFoundation indev @ 0x121a07a80] [0] Caméra FaceTime HD  [uid:3F45E80A-0176-46F7-B185-BB9E2C0E82E3]\n[AVFoundation indev @ 0x121a07a80] AVFoundation audio devices:\n[AVFoundation indev @ 0x121a07a80] [0] Micro MacBook Pro  [uid:BuiltInMicrophoneDevice]\n[AVFoundation indev @ 0x121a07a80] [1] Microsoft Teams Audio  [uid:MSLoopbackDriverDevice_UID]\n";
+    expect(parseAvfoundationAudioDevices(real)).toEqual(["Micro MacBook Pro", "Microsoft Teams Audio"]);
+    expect(avfoundationListArgs()).toEqual(["-hide_banner", "-f", "avfoundation", "-list_devices", "true", "-i", ""]);
   });
 });
