@@ -99,6 +99,19 @@ const fr = {
   "health.sleep.never": "L'ordinateur ne se met jamais en veille sur secteur.",
   "health.sleep.after": "L'ordinateur se met en veille après {n} minutes d'inactivité : il manquerait les directs.",
   "health.sleep.fix": "Paramètres, Système, Alimentation : réglez « Mettre en veille » sur « Jamais » pour le mode branché sur secteur.",
+  // IP camera + local audio capture
+  "capture.running": "Caméra IP et micro local : flux en cours.",
+  "capture.notRunning": "Caméra IP et micro local : capture arrêtée.",
+  "capture.outage": "Caméra IP ou micro local sans signal depuis un moment : {reason}",
+  "capture.restored": "Caméra IP et micro local : le flux est rétabli.",
+  "capture.exited": "ffmpeg s'est arrêté (code {code}).",
+  "capture.stalled": "Flux figé : plus de progression.",
+  "capture.calib.noAudio": "Aucun son enregistré pendant la calibration.",
+  "capture.calib.noVideo": "Aucune image reçue pendant la calibration.",
+  "capture.calib.noClap": "Claquement non détecté : tapez franchement dans les mains face à la caméra, près du micro.",
+  "capture.calib.audioBehind": "Le son arrive après l'image : un retard audio ne peut pas le corriger.",
+  "capture.calib.ffmpeg": "La calibration a échoué : {detail}",
+  "capture.invalidConfig": "Adresse RTSP ou périphérique audio invalide.",
 } as const;
 
 export type MessageKey = keyof typeof fr;
@@ -188,6 +201,19 @@ const en: Record<MessageKey, string> = {
   "health.sleep.never": "The computer never sleeps on mains power.",
   "health.sleep.after": "The computer goes to sleep after {n} minutes of inactivity: it would miss lives.",
   "health.sleep.fix": "Settings, System, Power: set \"Sleep\" to \"Never\" for plugged-in mode.",
+  // IP camera + local audio capture
+  "capture.running": "IP camera and local microphone: stream running.",
+  "capture.notRunning": "IP camera and local microphone: capture stopped.",
+  "capture.outage": "IP camera or local microphone has had no signal for a while: {reason}",
+  "capture.restored": "IP camera and local microphone: the stream is back.",
+  "capture.exited": "ffmpeg exited (code {code}).",
+  "capture.stalled": "Stream frozen: no progress.",
+  "capture.calib.noAudio": "No sound was recorded during calibration.",
+  "capture.calib.noVideo": "No picture was received during calibration.",
+  "capture.calib.noClap": "Clap not detected: clap your hands sharply in front of the camera, near the microphone.",
+  "capture.calib.audioBehind": "The sound arrives after the picture: an audio delay cannot fix that.",
+  "capture.calib.ffmpeg": "Calibration failed: {detail}",
+  "capture.invalidConfig": "Invalid RTSP address or audio device.",
 };
 
 const catalogs: Record<Locale, Record<MessageKey, string>> = { fr, en };
