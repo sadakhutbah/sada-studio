@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, powerSaveBlocker } from "electron";
 import { appendFileSync } from "node:fs";
 import { hostname } from "node:os";
+import { ensureMediaAccess, openMediaSettings } from "./media-access";
 import { SadaHttpApi } from "../core/api/sada-api";
 import type { StreamMeta } from "../core/api/types";
 import { t } from "../core/messages";
@@ -109,6 +110,8 @@ export function registerIpc(version: string): Kiosk {
   );
   gate?.subscribe(broadcast);
 
+  ipcMain.handle("media:access", () => ensureMediaAccess());
+  ipcMain.handle("media:open-settings", (_e, kind: unknown) => openMediaSettings(kind === "camera" ? "camera" : "microphone"));
   ipcMain.handle("capture:get", () => capture.view);
   ipcMain.handle("capture:set-settings", (_e, s: unknown) => run(async () => capture.setSettings(s)));
   ipcMain.handle("capture:acquire", () => run(async () => (await capture.acquire(), null)));

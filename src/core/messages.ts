@@ -23,6 +23,7 @@ const fr = {
   "error.deviceRemoved": "Cet appareil a été retiré de la console Sada.",
   // Capture
   "media.denied": "Accès à la caméra ou au micro refusé par le système.",
+  "media.deniedSystem": "Sada Studio n'a pas l'autorisation d'utiliser la caméra et le micro : autorisez-la dans Réglages Système, Confidentialité et sécurité.",
   "media.notFound": "Caméra ou micro introuvable.",
   "media.inUse": "Caméra ou micro déjà utilisé par une autre application.",
   "media.failed": "Capture impossible.",
@@ -135,6 +136,7 @@ const en: Record<MessageKey, string> = {
   "api.unreachable": "Sada server unreachable.",
   "error.deviceRemoved": "This device was removed from the Sada console.",
   "media.denied": "Access to the camera or microphone was denied by the system.",
+  "media.deniedSystem": "Sada Studio is not allowed to use the camera and microphone: allow it in System Settings, Privacy & Security.",
   "media.notFound": "Camera or microphone not found.",
   "media.inUse": "Camera or microphone already in use by another application.",
   "media.failed": "Capture failed.",

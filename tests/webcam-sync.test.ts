@@ -175,6 +175,14 @@ describe("CameraSource with the delay stage", () => {
     expect(await source.calibrate()).toMatchObject({ ok: false });
   });
 
+  it("never calls getUserMedia (no system prompt loop) while the permission is refused", async () => {
+    const getUserMedia = vi.fn();
+    const source = new CameraSource({ getUserMedia }, () => null, async () => ({ camera: true, microphone: false }));
+    await expect(source.acquire(opts)).rejects.toThrow();
+    await expect(source.acquire(opts)).rejects.toThrow();
+    expect(getUserMedia).not.toHaveBeenCalled();
+  });
+
   it("is reachable through the routing source", () => {
     const { source } = mk();
     const routing = new RoutingSource({ camera: source }, "camera");

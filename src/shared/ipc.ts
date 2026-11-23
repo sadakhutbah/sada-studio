@@ -34,9 +34,20 @@ export interface CaptureBridge {
   calibrate(): Promise<IpcResult<CalibrationView>>;
 }
 
+/** macOS camera / microphone permission (always true elsewhere). */
+export interface MediaAccess {
+  camera: boolean;
+  microphone: boolean;
+}
+
 /** What the main process exposes to the UI (`window.studio`). */
 export interface StudioBridge {
   capture: CaptureBridge;
+  media: {
+    /** Asks once (macOS), then only reads the status: safe to call repeatedly. */
+    access(): Promise<MediaAccess>;
+    openSettings(kind: "camera" | "microphone"): Promise<void>;
+  };
   kiosk: {
     get(): Promise<KioskSnapshot>;
     onChange(cb: (s: KioskSnapshot) => void): () => void;

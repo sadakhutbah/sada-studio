@@ -14,7 +14,7 @@ const devUserData = app.isPackaged ? null : app.getPath("userData");
 app.setName(APP_NAME);
 if (devUserData) app.setPath("userData", devUserData);
 // Must match `appId` in electron-builder.yml: Windows groups notifications and pinned shortcuts by it.
-if (process.platform === "win32") app.setAppUserModelId("org.sadakhutbah.studio");
+if (process.platform === "win32") app.setAppUserModelId("com.sada.sadakhutbah");
 app.setAboutPanelOptions({
   applicationName: APP_NAME,
   applicationVersion: app.getVersion(),
