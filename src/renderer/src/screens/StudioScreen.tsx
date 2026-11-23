@@ -8,9 +8,10 @@ import { Backoff } from "@core/kiosk/backoff";
 import { describeMediaError } from "@core/sources/camera";
 import { formatBitrate, formatDuration } from "@core/stats";
 import type { KioskSnapshot } from "@shared/ipc";
-import type { CaptureSettings } from "@core/capture/settings";
+import type { CalibrationView, CaptureSettings } from "@core/capture/settings";
+import { normalizeDelay } from "@core/capture/types";
 import { useBroadcast, useCapture, useDevices, useHealth, useKeeper, useLevel, useNow, useReporter } from "../hooks";
-import { loadPrefs, savePrefs, type Prefs } from "../prefs";
+import { loadPrefs, savePrefs, webcamDelayOf, webcamPairKey, type Prefs } from "../prefs";
 import { fill, fr } from "../strings";
 import { Brand, Btn, Card, ErrorBox, Field, inputClass, Kicker, StatusPill, Title, type PillKey } from "../ui";
 import { HealthPanel } from "./HealthPanel";
@@ -47,6 +48,22 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   const ipMode = capture?.settings.sourceKind === "ip-camera";
   const rtspUrl = capture?.settings.rtspUrl ?? "";
   const audioDevice = capture?.settings.audioDevice ?? "";
+  const webcamDelay = webcamDelayOf(prefs);
+  const [webcamCalibration, setWebcamCalibration] = useState<CalibrationView>({ status: "idle" });
+  const setWebcamDelay = (ms: number) => {
+    const delayMs = normalizeDelay(ms);
+    source.syncOf("camera")?.setAudioDelay(delayMs);
+    update({ webcamDelays: { ...prefs.webcamDelays, [webcamPairKey(prefs)]: delayMs } });
+  };
+  const calibrateWebcam = async () => {
+    const sync = source.syncOf("camera");
+    if (!sync) return;
+    const seconds = 10;
+    setWebcamCalibration({ status: "running", seconds });
+    const result = await sync.calibrate(seconds);
+    if (result.ok) setWebcamDelay(result.delayMs);
+    setWebcamCalibration({ status: "done", result, at: Date.now() });
+  };
   const sourceOptions = useMemo<SourceOptions>(
     () => ({
       sourceKind: ipMode ? "ip-camera" : "camera",
@@ -54,8 +71,9 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
       videoDeviceId: prefs.videoDeviceId || undefined,
       audioDeviceId: prefs.audioDeviceId || undefined,
       audio: prefs.audio,
+      audioDelayMs: ipMode ? undefined : webcamDelay,
     }),
-    [ipMode, rtspUrl, audioDevice, prefs.videoDeviceId, prefs.audioDeviceId, prefs.audio],
+    [ipMode, rtspUrl, audioDevice, prefs.videoDeviceId, prefs.audioDeviceId, prefs.audio, webcamDelay],
   );
   const setCaptureSettings = (patch: Partial<CaptureSettings>) => {
     if (capture) void window.studio.capture.setSettings({ ...capture.settings, ...patch });
@@ -372,6 +390,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
           onRefreshAudioInputs={refreshAudioInputs}
           onCaptureDelay={(ms) => void window.studio.capture.setDelay(ms)}
           onCalibrate={() => void window.studio.capture.calibrate()}
+          webcam={{ delayMs: webcamDelay, calibration: webcamCalibration, canCalibrate: stream !== null && !ipMode, onDelay: setWebcamDelay, onCalibrate: () => void calibrateWebcam() }}
         />
       )}
     </div>

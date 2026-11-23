@@ -1,3 +1,5 @@
+import type { CalibrationOutcome } from "../capture/calibrator";
+
 /** Audio settings: automatic processing is off by default (imam's voice, recitations). */
 export interface AudioSettings {
   echoCancellation: boolean;
@@ -12,6 +14,8 @@ export interface SourceOptions {
   sourceKind?: "camera" | "ip-camera";
   /** For `ip-camera`: part of the capture settings, here so that a change restarts the capture (the main process holds the rest). */
   ipCamera?: { rtspUrl: string; audioDevice: string };
+  /** Webcam: delay of the microphone, ms (applied live by Web Audio; saved per camera/microphone pair). */
+  audioDelayMs?: number;
   videoDeviceId?: string;
   audioDeviceId?: string;
   audio: AudioSettings;
@@ -30,4 +34,11 @@ export interface MediaSourceStrategy {
   release(): void;
   /** Notifies the loss of the source (camera unplugged). Returns the unsubscribe function. */
   onEnded(cb: () => void): () => void;
+  /** Synchronization controls, for the sources whose delay is applied by the renderer (webcam). */
+  readonly sync?: SourceSync;
+}
+
+export interface SourceSync {
+  setAudioDelay(ms: number): void;
+  calibrate(seconds?: number): Promise<CalibrationOutcome>;
 }

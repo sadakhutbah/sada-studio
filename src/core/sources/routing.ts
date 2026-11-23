@@ -1,4 +1,4 @@
-import type { MediaSourceStrategy, SourceOptions } from "./types";
+import type { MediaSourceStrategy, SourceOptions, SourceSync } from "./types";
 
 /**
  * One `MediaSourceStrategy` in front of several: the options say which one is wanted (`sourceKind`). The session and
@@ -14,6 +14,11 @@ export class RoutingSource implements MediaSourceStrategy {
     private readonly sources: Record<string, MediaSourceStrategy>,
     private readonly fallback: string,
   ) {}
+
+  /** Synchronization controls of a source (the webcam's, whatever the current choice: it is the one asked for). */
+  syncOf(kind: string): SourceSync | undefined {
+    return this.sources[kind]?.sync;
+  }
 
   private pick(o: SourceOptions): string {
     const k = o.sourceKind ?? this.fallback;

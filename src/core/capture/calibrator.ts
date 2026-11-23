@@ -22,6 +22,11 @@ export function afterSettling(series: Sample[], settleS: number, other: Sample[]
   return series.filter((s) => s.t >= from);
 }
 
+/** Analysis shared by every source (ffmpeg series for the IP camera, renderer series for the webcam). */
+export function calibrateSeries(audio: Sample[], video: Sample[], settleS: number): CalibrationResult {
+  return computeClapOffset(afterSettling(audio, settleS, video), afterSettling(video, settleS, audio));
+}
+
 /**
  * Assisted clap calibration. The operator claps in front of the camera while ffmpeg records, for `seconds`,
  * the motion of the picture and the level of the sound on the same wall clock (no delay applied).
@@ -39,9 +44,7 @@ export async function calibrateClap(
     const r = await io.runFfmpeg(source.buildCalibrationArgs(config, seconds, files));
     if (r.code !== 0) return { ok: false, reason: "ffmpeg", detail: r.stderr.trim().split(/\r?\n/).at(-1) ?? "" };
     const [audio, video] = await Promise.all([io.readText(files.audioLevels), io.readText(files.videoMotion)]);
-    const a = parseMetadataSeries(audio);
-    const v = parseMetadataSeries(video);
-    return computeClapOffset(afterSettling(a, settleS, v), afterSettling(v, settleS, a));
+    return calibrateSeries(parseMetadataSeries(audio), parseMetadataSeries(video), settleS);
   } finally {
     await files.dispose();
   }

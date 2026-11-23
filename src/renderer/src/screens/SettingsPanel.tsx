@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
-import type { CaptureSettings, CaptureView } from "@core/capture/settings";
+import { useEffect, useRef, useState } from "react";
+import type { CalibrationView, CaptureSettings, CaptureView } from "@core/capture/settings";
 import type { AudioSettings } from "@core/sources/types";
 import { IpCameraSettings } from "./IpCameraSettings";
+import { CalibrationWizard, DelayStepper } from "./SyncControls";
 import type { Prefs } from "../prefs";
 import { fr } from "../strings";
 import { Btn, Card, Field, Kicker, selectClass } from "../ui";
@@ -20,6 +21,8 @@ type Props = {
   onRefreshAudioInputs: () => void;
   onCaptureDelay: (ms: number) => void;
   onCalibrate: () => void;
+  /** Webcam synchronization (state held by the renderer, same assistant and same "Advanced" section). */
+  webcam: { delayMs: number; calibration: CalibrationView; canCalibrate: boolean; onDelay: (ms: number) => void; onCalibrate: () => void };
 };
 
 /** Dedicated settings view (camera, microphone, audio processing), opened from the header gear button. */
@@ -36,7 +39,11 @@ export function SettingsPanel({
   onRefreshAudioInputs,
   onCaptureDelay,
   onCalibrate,
+  webcam,
 }: Props) {
+  const [wizard, setWizard] = useState(false);
+  const ipMode = capture?.settings.sourceKind === "ip-camera";
+  const webcamBusy = webcam.calibration.status === "running";
   const closeButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -131,10 +138,41 @@ export function SettingsPanel({
                 </select>
               </Field>
               {locked && <p className="m-0 text-[0.82rem] text-muted">{fr.sources.lockedLive}</p>}
+              <div>
+                <Btn
+                  disabled={locked || webcamBusy || !webcam.canCalibrate}
+                  onClick={() => {
+                    setWizard(true);
+                    webcam.onCalibrate();
+                  }}
+                >
+                  {fr.ipCamera.calibrate}
+                </Btn>
+              </div>
+              <details className="rounded-lg border border-line px-3 py-2">
+                <summary className="cursor-pointer select-none font-semibold text-deep">{fr.ipCamera.advanced}</summary>
+                <div className="mt-3 grid gap-3.5">
+                  <DelayStepper delayMs={webcam.delayMs} disabled={locked || webcamBusy} onDelay={webcam.onDelay} />
+                  <div>
+                    <p className="m-0 mb-1 text-[0.9rem] font-semibold">{fr.audio.kicker}</p>
+                    <p className="mb-2 mt-0 text-[0.82rem] text-muted">{fr.audio.hint}</p>
+                    <div className="grid gap-2">
+                      {(["echoCancellation", "noiseSuppression", "autoGainControl"] as const).map((k) => (
+                        <label key={k} className="flex items-center gap-2.5 text-[0.95rem]">
+                          <input type="checkbox" checked={prefs.audio[k]} disabled={locked} onChange={(e) => setAudio(k, e.target.checked)} />
+                          {fr.audio[k]}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </details>
             </div>
           </Card>
           )}
+          {wizard && !ipMode && <CalibrationWizard calibration={webcam.calibration} onRetry={webcam.onCalibrate} onClose={() => setWizard(false)} />}
 
+          {ipMode && (
           <Card>
             <Kicker>{fr.audio.kicker}</Kicker>
             <p className="mb-3 mt-0 text-[0.85rem] text-muted">{fr.audio.hint}</p>
@@ -147,6 +185,7 @@ export function SettingsPanel({
               ))}
             </div>
           </Card>
+          )}
         </div>
         <div className="mt-4 flex justify-end">
           <Btn variante="ghost" onClick={onClose}>
