@@ -341,6 +341,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
                 <input
                   value={prefs.title}
                   placeholder={fr.live.titlePlaceholder}
+                  autoComplete="off"
                   disabled={locked}
                   onChange={(e) => update({ title: e.target.value })}
                   className={inputClass}

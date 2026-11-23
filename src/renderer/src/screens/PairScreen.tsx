@@ -72,7 +72,7 @@ export function PairScreen({ kiosk }: { kiosk: KioskSnapshot }) {
                     value={instance}
                     onChange={(e) => setInstance(e.target.value)}
                     placeholder="console.sadakhutbah.org"
-                    autoComplete="url"
+                    autoComplete="off"
                     spellCheck={false}
                     required
                     className={inputClass}
