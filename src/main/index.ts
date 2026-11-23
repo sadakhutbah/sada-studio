@@ -3,6 +3,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { backoffDelay } from "../core/kiosk/backoff";
 import { t } from "../core/messages";
+import { registerProjector } from "./projector";
 import { registerIpc, type Kiosk } from "./ipc";
 import { log } from "./log";
 
@@ -232,6 +233,7 @@ void app.whenReady().then(() => {
     app.setLoginItemSettings({ openAtLogin: true, args: ["--autostart"] });
   }
   kiosk = registerIpc(app.getVersion());
+  registerProjector(devUrl, () => win);
   createAppMenu();
   createTray();
   win = createWindow();

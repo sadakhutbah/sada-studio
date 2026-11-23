@@ -13,10 +13,14 @@ export interface Prefs {
   webcamDelays: Record<string, number>;
   /** Last typed instance address. */
   instance: string;
+  /** Projector mode: open it by itself at the start of a live when an external screen is present. */
+  projectorAuto: boolean;
+  /** Last screen chosen for the projector. */
+  projectorDisplay: number | null;
 }
 
 const KEY = "sada-studio.prefs";
-const DEFAULTS: Prefs = { kind: "khutba", title: "", videoDeviceId: "", audioDeviceId: "", audio: DEFAULT_AUDIO, webcamDelays: {}, instance: "" };
+const DEFAULTS: Prefs = { kind: "khutba", title: "", videoDeviceId: "", audioDeviceId: "", audio: DEFAULT_AUDIO, webcamDelays: {}, instance: "", projectorAuto: true, projectorDisplay: null };
 
 /** Non-secret preferences, kept in the UI's local storage. */
 export function loadPrefs(): Prefs {

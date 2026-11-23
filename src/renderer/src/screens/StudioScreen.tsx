@@ -16,6 +16,7 @@ import { fill, fr } from "../strings";
 import { t } from "@core/messages";
 import { Brand, Btn, Card, ErrorBox, Field, inputClass, Kicker, StatusPill, Title, type PillKey } from "../ui";
 import { HealthPanel } from "./HealthPanel";
+import { ProjectorPanel } from "./ProjectorPanel";
 import { SettingsPanel } from "./SettingsPanel";
 
 const kindLabel = (k: StreamKind) => fr.live[k];
@@ -198,10 +199,13 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-[1180px] gap-5 px-6 py-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <main
+        data-onair={onAir || undefined}
+        className={`mx-auto grid gap-5 px-6 py-6 ${onAir ? "max-w-[1700px]" : "max-w-[1180px] lg:grid-cols-[minmax(0,1fr)_360px]"}`}
+      >
         <div className="grid content-start gap-4">
           <Card className="p-0!">
-            <div className="relative aspect-video overflow-hidden rounded-t-[10px] bg-night">
+            <div className={`relative aspect-video overflow-hidden rounded-t-[10px] bg-night ${onAir ? "max-h-[calc(100vh-17rem)] min-h-64 w-full" : ""}`}>
               <video ref={video} autoPlay muted playsInline className="size-full object-contain" />
               {!stream && (
                 <div className="absolute inset-0 grid place-content-center gap-3 px-6 text-center text-night-muted">
@@ -282,6 +286,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
               </div>
             )}
           </Card>
+          <ProjectorPanel stream={stream} onAir={onAir} prefs={prefs} setPrefs={update} />
           {kiosk.stopPending && <p className="m-0 text-[0.85rem] text-muted">{fr.stop.pending}</p>}
           {state.status === "error" && state.error && state.errorCode !== "conflict" && <ErrorBox>{state.error}</ErrorBox>}
           {conflict && (

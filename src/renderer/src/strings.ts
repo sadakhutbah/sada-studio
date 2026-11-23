@@ -62,6 +62,17 @@ export const fr = {
     keep: "Continuer le direct",
     pending: "L'arrêt sera confirmé au serveur dès que la connexion revient.",
   },
+  projector: {
+    title: "Projecteur",
+    help: "Affiche le retour vidéo seul, en plein écran, sur un autre écran (télé, HDMI). Échap ou double-clic dans le projecteur pour le fermer.",
+    screen: "Écran",
+    screenName: "Écran {n} ({w}×{h})",
+    external: "externe",
+    primary: "principal",
+    open: "Ouvrir le projecteur",
+    close: "Fermer le projecteur",
+    auto: "Ouvrir automatiquement au direct si un écran externe est branché",
+  },
   settings: { button: "Réglages", title: "Réglages", close: "Fermer" },
   sources: {
     kicker: "Sources",
