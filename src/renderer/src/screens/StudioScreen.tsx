@@ -198,10 +198,13 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-[1180px] gap-5 px-6 py-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <main
+        data-onair={onAir || undefined}
+        className={`mx-auto grid gap-5 px-6 py-6 ${onAir ? "max-w-[1700px]" : "max-w-[1180px] lg:grid-cols-[minmax(0,1fr)_360px]"}`}
+      >
         <div className="grid content-start gap-4">
           <Card className="p-0!">
-            <div className="relative aspect-video overflow-hidden rounded-t-[10px] bg-night">
+            <div className={`relative aspect-video overflow-hidden rounded-t-[10px] bg-night ${onAir ? "max-h-[calc(100vh-17rem)] min-h-64 w-full" : ""}`}>
               <video ref={video} autoPlay muted playsInline className="size-full object-contain" />
               {!stream && (
                 <div className="absolute inset-0 grid place-content-center gap-3 px-6 text-center text-night-muted">
