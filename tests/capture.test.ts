@@ -49,7 +49,9 @@ describe("ffmpeg command line", () => {
     const c = new IpCameraLocalAudioSource().buildCalibrationArgs(config, 8, { audioLevels: "C:\\t\\a.txt", videoMotion: "/t/v.txt" });
     expect(c.join(" ")).not.toContain("adelay");
     expect(c.filter((a) => a === "-t")).toHaveLength(2);
-    expect(c.join(" ")).toContain("file=C\\:/t/a.txt");
+    // Quoted: unquoted, ffmpeg.exe fails with "No option name near '/Users/…'" on a Windows temp path (checked on Windows).
+    expect(c.join(" ")).toContain("file='C\\:/t/a.txt'");
+    expect(c.join(" ")).toContain("file='/t/v.txt'");
   });
 
   it("registry picks the strategy by id", () => {
@@ -257,6 +259,9 @@ describe("DirectShow device listing", () => {
     expect(parseDshowAudioDevices(typed)).toEqual(["Mixer (USB Audio)"]);
     const old = '[dshow @ 0x1] DirectShow video devices\n[dshow @ 0x1]  "Cam"\n[dshow @ 0x1] DirectShow audio devices\n[dshow @ 0x1]  "Line In"\n';
     expect(parseDshowAudioDevices(old)).toEqual(["Line In"]);
+    // ffmpeg 8 on Windows (real output): "in#0" prefix, names with parentheses, the virtual cables of a streaming PC.
+    const real = '[in#0 @ 0000027c9a8dfd40] "NexiGo N940P 2K Webcam" (video)\n[in#0 @ 0000027c9a8dfd40]   Alternative name "@device_pnp_x"\n[in#0 @ 0000027c9a8dfd40] "Microphone (6- Arctis Nova Pro Wireless)" (audio)\n[in#0 @ 0000027c9a8dfd40]   Alternative name "@device_cm_y"\n[in#0 @ 0000027c9a8dfd40] "CABLE-C Output (VB-Audio Cable C)" (audio)\n';
+    expect(parseDshowAudioDevices(real)).toEqual(["Microphone (6- Arctis Nova Pro Wireless)", "CABLE-C Output (VB-Audio Cable C)"]);
     expect(dshowListArgs()).toContain("dshow");
   });
 });

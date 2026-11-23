@@ -109,9 +109,13 @@ export function limitInput(args: string[], seconds: number): string[] {
   return [...args.slice(0, i), "-t", String(seconds), ...args.slice(i)];
 }
 
-/** Escapes a path for a filtergraph option value (Windows drive colon, backslashes). */
+/**
+ * A path as a filtergraph option value: forward slashes, the drive colon escaped, the whole thing in single quotes.
+ * Quoting is what makes the escaped colon (`C\:/…`) survive the filtergraph level; unquoted, ffmpeg on Windows stops at
+ * "No option name near '/Users/…'" (verified with ffmpeg.exe).
+ */
 export function filterPath(p: string): string {
-  return p.replace(/\\/g, "/").replace(/:/g, "\\:");
+  return `'${p.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "'\\''")}'`;
 }
 
 export function defaultCaptureSources(): CaptureSourceRegistry {
