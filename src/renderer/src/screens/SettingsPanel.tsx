@@ -92,7 +92,6 @@ export function SettingsPanel({
                   </button>
                 ))}
               </div>
-              {capture.settings.sourceKind === "ip-camera" && <p className="mb-0 mt-2 text-[0.82rem] text-muted">{fr.ipCamera.kindHelp}</p>}
               {locked && <p className="mb-0 mt-2 text-[0.82rem] text-muted">{fr.ipCamera.liveLocked}</p>}
             </Card>
           )}
