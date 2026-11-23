@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -295,6 +295,9 @@ describe("ffmpeg location", () => {
     const dir = mkdtempSync(join(tmpdir(), "sada-res-"));
     try {
       expect(resolveFfmpeg(dir, "linux", {})).toBe("ffmpeg");
+      mkdirSync(join(dir, "ffmpeg"));
+      writeFileSync(join(dir, "ffmpeg", "ffmpeg"), "");
+      expect(resolveFfmpeg(dir, "darwin", {})).toBe(join(dir, "ffmpeg", "ffmpeg"));
       rmSync(dir, { recursive: true, force: true });
     } finally {
       rmSync(dir, { recursive: true, force: true });

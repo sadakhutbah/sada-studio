@@ -32,6 +32,12 @@ mac:
     - { target: dmg, arch: [universal] }
     - { target: zip, arch: [universal] }
   artifactName: Sada-Studio-${version}-mac.${ext}
+  # ffmpeg for the IP camera + local microphone source: universal binary (arm64 + x64) shipped in
+  # Contents/Resources/ffmpeg/ffmpeg and signed with the bundle, fetched by scripts/fetch-ffmpeg-mac.mjs.
+  extraResources:
+    - { from: build/ffmpeg/mac, to: ffmpeg }
+  # Already universal: identical in the x64 and arm64 halves, so @electron/universal must copy it as is.
+  x64ArchFiles: Contents/Resources/ffmpeg/ffmpeg
 dmg:
   title: Sada Studio ${version}
 win:
