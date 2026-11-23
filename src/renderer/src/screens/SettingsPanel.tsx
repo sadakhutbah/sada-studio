@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
+import type { CaptureSettings, CaptureView } from "@core/capture/settings";
 import type { AudioSettings } from "@core/sources/types";
+import { IpCameraSettings } from "./IpCameraSettings";
 import type { Prefs } from "../prefs";
 import { fr } from "../strings";
 import { Btn, Card, Field, Kicker, selectClass } from "../ui";
@@ -11,10 +13,30 @@ type Props = {
   locked: boolean;
   onChange: (patch: Partial<Prefs>) => void;
   onClose: () => void;
+  /** "IP camera + local microphone" source (state held by the main process). */
+  capture: CaptureView | null;
+  audioInputs: string[];
+  onCaptureSettings: (patch: Partial<CaptureSettings>) => void;
+  onRefreshAudioInputs: () => void;
+  onCaptureDelay: (ms: number) => void;
+  onCalibrate: () => void;
 };
 
 /** Dedicated settings view (camera, microphone, audio processing), opened from the header gear button. */
-export function SettingsPanel({ prefs, cameras, microphones, locked, onChange, onClose }: Props) {
+export function SettingsPanel({
+  prefs,
+  cameras,
+  microphones,
+  locked,
+  onChange,
+  onClose,
+  capture,
+  audioInputs,
+  onCaptureSettings,
+  onRefreshAudioInputs,
+  onCaptureDelay,
+  onCalibrate,
+}: Props) {
   const closeButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -50,6 +72,42 @@ export function SettingsPanel({ prefs, cameras, microphones, locked, onChange, o
           </button>
         </div>
         <div className="grid gap-4">
+          {capture && (
+            <Card>
+              <Kicker>{fr.ipCamera.kind}</Kicker>
+              <div role="radiogroup" aria-label={fr.ipCamera.kind} className="grid grid-cols-2 gap-1 rounded-[9px] bg-paper-2 p-1">
+                {(["camera", "ip-camera"] as const).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    role="radio"
+                    aria-checked={capture.settings.sourceKind === k}
+                    disabled={locked}
+                    onClick={() => onCaptureSettings({ sourceKind: k })}
+                    className={`min-h-9 cursor-pointer rounded-[7px] px-3 font-semibold disabled:cursor-not-allowed ${
+                      capture.settings.sourceKind === k ? "bg-deep text-white" : "text-deep hover:bg-white/60"
+                    }`}
+                  >
+                    {k === "camera" ? fr.ipCamera.kindCamera : fr.ipCamera.kindIp}
+                  </button>
+                ))}
+              </div>
+              {capture.settings.sourceKind === "ip-camera" && <p className="mb-0 mt-2 text-[0.82rem] text-muted">{fr.ipCamera.kindHelp}</p>}
+              {locked && <p className="mb-0 mt-2 text-[0.82rem] text-muted">{fr.ipCamera.liveLocked}</p>}
+            </Card>
+          )}
+
+          {capture?.settings.sourceKind === "ip-camera" ? (
+            <IpCameraSettings
+              view={capture}
+              devices={audioInputs}
+              locked={locked}
+              onSettings={onCaptureSettings}
+              onRefreshDevices={onRefreshAudioInputs}
+              onDelay={onCaptureDelay}
+              onCalibrate={onCalibrate}
+            />
+          ) : (
           <Card>
             <Kicker>{fr.sources.kicker}</Kicker>
             <div className="grid gap-3.5">
@@ -76,6 +134,7 @@ export function SettingsPanel({ prefs, cameras, microphones, locked, onChange, o
               {locked && <p className="m-0 text-[0.82rem] text-muted">{fr.sources.lockedLive}</p>}
             </div>
           </Card>
+          )}
 
           <Card>
             <Kicker>{fr.audio.kicker}</Kicker>

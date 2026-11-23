@@ -1,4 +1,5 @@
-import { BrowserWindow, ipcMain, powerSaveBlocker } from "electron";
+import { app, BrowserWindow, ipcMain, powerSaveBlocker } from "electron";
+import { appendFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { SadaHttpApi } from "../core/api/sada-api";
 import type { StreamMeta } from "../core/api/types";
@@ -7,7 +8,10 @@ import { ApiError } from "../core/errors";
 import { KioskSupervisor, type ClientReport } from "../core/kiosk/supervisor";
 import type { UpdateGate } from "../core/kiosk/update-gate";
 import type { IpcResult, KioskSnapshot } from "../shared/ipc";
+import { FileAudioOffsetStore, FileCaptureSettingsStore } from "./capture-files";
+import { CaptureService } from "./capture-service";
 import { FilePersistStore, SafeDeviceStore } from "./device-store";
+import { resolveFfmpeg } from "./ffmpeg-io";
 import { log } from "./log";
 import { startUpdater } from "./updater";
 import { collectWindowsFacts } from "./windows-facts";
@@ -29,6 +33,7 @@ const isReport = (r: unknown): r is ClientReport =>
 
 export interface Kiosk {
   supervisor: KioskSupervisor;
+  capture: CaptureService;
   snapshot(): KioskSnapshot;
 }
 
@@ -57,6 +62,39 @@ export function registerIpc(version: string): Kiosk {
   supervisor.subscribe(broadcast);
   powerSaveBlocker.start("prevent-app-suspension");
 
+  // "IP camera + local microphone" source: ffmpeg lives here, the UI only gets the state and the media.
+  const userData = app.getPath("userData");
+  const sendAll = (channel: string, payload: unknown) => {
+    for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send(channel, payload);
+  };
+  let lastAlert = false;
+  let dumpIndex = 0;
+  const capture = new CaptureService({
+    settings: new FileCaptureSettingsStore(userData),
+    offsets: new FileAudioOffsetStore(userData),
+    ffmpegPath: resolveFfmpeg(app.isPackaged ? process.resourcesPath : null),
+    audioBackend: process.env.SADA_STUDIO_AUDIO_BACKEND === "pcm" ? "pcm" : undefined,
+    onView: (v) => {
+      sendAll("capture:changed", v);
+      // An outage starts or ends: the operators are told by the next heartbeat, brought forward.
+      if (v.alert !== lastAlert) {
+        lastAlert = v.alert;
+        supervisor.refreshChecks();
+      }
+    },
+    onMedia: (m) => {
+      sendAll("capture:media", m);
+      // Testing only (application not installed): one file per capture run, to measure the A/V alignment offline.
+      if (!app.isPackaged && process.env.SADA_STUDIO_DUMP) {
+        if (m.init) dumpIndex++;
+        appendFileSync(`${process.env.SADA_STUDIO_DUMP}.${dumpIndex}.mp4`, m.data);
+      }
+    },
+    log,
+  });
+  supervisor.setCheckProvider(() => capture.healthChecks());
+  void capture.init();
+
   gate = startUpdater(
     () => {
       const v = supervisor.view;
@@ -70,6 +108,14 @@ export function registerIpc(version: string): Kiosk {
     log,
   );
   gate?.subscribe(broadcast);
+
+  ipcMain.handle("capture:get", () => capture.view);
+  ipcMain.handle("capture:set-settings", (_e, s: unknown) => run(async () => capture.setSettings(s)));
+  ipcMain.handle("capture:acquire", () => run(async () => (await capture.acquire(), null)));
+  ipcMain.handle("capture:release", () => run(async () => (await capture.release(), null)));
+  ipcMain.handle("capture:devices", () => capture.refreshDevices());
+  ipcMain.handle("capture:set-delay", (_e, ms: unknown) => run(async () => capture.setDelay(Number(ms))));
+  ipcMain.handle("capture:calibrate", () => run(() => capture.calibrate()));
 
   ipcMain.handle("kiosk:get", () => snapshot());
   ipcMain.handle("kiosk:start-pairing", (_e, baseUrl: unknown) =>
@@ -95,5 +141,5 @@ export function registerIpc(version: string): Kiosk {
   ipcMain.handle("studio:whip-close", (_e, resource: string) => run(async () => (await api.whip.close(resource), null)));
 
   supervisor.boot();
-  return { supervisor, snapshot };
+  return { supervisor, capture, snapshot };
 }

@@ -50,10 +50,15 @@ let quitting = false;
 
 const iconPath = () => (app.isPackaged ? join(process.resourcesPath, "icon.png") : join(app.getAppPath(), "build/icon.png"));
 
+/** Testing only (application not installed): window size for full-resolution screenshots, e.g. SADA_STUDIO_WINDOW=1920x1400. */
+function testWindowSize(): { width: number; height: number } {
+  const m = dev ? /^(\d{3,4})x(\d{3,4})$/.exec(process.env.SADA_STUDIO_WINDOW ?? "") : null;
+  return m ? { width: Number(m[1]), height: Number(m[2]) } : { width: 1180, height: 800 };
+}
+
 function createWindow(): BrowserWindow {
   const w = new BrowserWindow({
-    width: 1180,
-    height: 800,
+    ...testWindowSize(),
     minWidth: 980,
     minHeight: 680,
     show: false,
@@ -196,6 +201,9 @@ function captureAndQuit(w: BrowserWindow, path: string) {
     const delay = Number(process.env.SADA_STUDIO_CAPTURE_DELAY ?? 5000);
     const shoot = async () => {
       writeFileSync(path, (await w.webContents.capturePage()).toPNG());
+      // Visible text and whatever the UI script left in `window.__out`, next to the picture (no way to read pixels in a test).
+      const dom = await w.webContents.executeJavaScript("JSON.stringify({text:document.body.innerText,out:window.__out??null})").catch(() => "");
+      writeFileSync(`${path}.json`, String(dom));
       quitting = true;
       app.quit();
     };
@@ -207,6 +215,8 @@ function captureAndQuit(w: BrowserWindow, path: string) {
 app.on("second-instance", showWindow);
 app.on("before-quit", () => {
   quitting = true;
+  // ffmpeg must not outlive the application.
+  void kiosk?.capture.dispose();
 });
 // Windows shutdown or sign-out: never block it.
 app.on("session-end" as never, () => {

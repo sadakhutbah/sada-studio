@@ -112,6 +112,10 @@ const fr = {
   "capture.calib.audioBehind": "Le son arrive après l'image : un retard audio ne peut pas le corriger.",
   "capture.calib.ffmpeg": "La calibration a échoué : {detail}",
   "capture.invalidConfig": "Adresse RTSP ou périphérique audio invalide.",
+  "capture.ffmpegMissing": "ffmpeg est introuvable : la source Caméra IP ne peut pas démarrer.",
+  "capture.calibrating": "Calibration en cours : réessayez dans un instant.",
+  "capture.timeout": "Aucune image reçue de la caméra IP. Vérifiez l'adresse RTSP et le réseau.",
+  "capture.unsupported": "Ce lecteur ne sait pas lire le flux de la caméra IP.",
 } as const;
 
 export type MessageKey = keyof typeof fr;
@@ -214,6 +218,10 @@ const en: Record<MessageKey, string> = {
   "capture.calib.audioBehind": "The sound arrives after the picture: an audio delay cannot fix that.",
   "capture.calib.ffmpeg": "Calibration failed: {detail}",
   "capture.invalidConfig": "Invalid RTSP address or audio device.",
+  "capture.ffmpegMissing": "ffmpeg was not found: the IP camera source cannot start.",
+  "capture.calibrating": "Calibration in progress: try again in a moment.",
+  "capture.timeout": "No picture received from the IP camera. Check the RTSP address and the network.",
+  "capture.unsupported": "This player cannot play the IP camera stream.",
 };
 
 const catalogs: Record<Locale, Record<MessageKey, string>> = { fr, en };

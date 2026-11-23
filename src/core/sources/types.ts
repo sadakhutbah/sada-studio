@@ -8,6 +8,10 @@ export interface AudioSettings {
 export const DEFAULT_AUDIO: AudioSettings = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
 
 export interface SourceOptions {
+  /** Which source feeds the broadcast; the PC camera when absent. */
+  sourceKind?: "camera" | "ip-camera";
+  /** For `ip-camera`: part of the capture settings, here so that a change restarts the capture (the main process holds the rest). */
+  ipCamera?: { rtspUrl: string; audioDevice: string };
   videoDeviceId?: string;
   audioDeviceId?: string;
   audio: AudioSettings;

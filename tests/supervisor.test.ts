@@ -220,6 +220,23 @@ describe("KioskSupervisor", () => {
       sup.dispose();
     });
 
+    it("adds the checks produced by the main process (IP camera capture) and sends an outage at once", async () => {
+      const { api, sup } = setup();
+      let capture: { id: string; ok: boolean; detail: string }[] = [{ id: "capture", ok: true, detail: "running" }];
+      sup.setCheckProvider(() => capture);
+      sup.boot();
+      sup.setReport(calmReport);
+      await tick(5_000);
+      expect(api.beats.at(-1)!.health.checks.map((c: { id: string }) => c.id)).toEqual(["camera", "capture", "network"]);
+      const n = api.beats.length;
+      capture = [{ id: "capture", ok: false, detail: "no signal" }];
+      sup.refreshChecks();
+      await tick(10);
+      expect(api.beats.length).toBe(n + 1);
+      expect(api.beats.at(-1)!.health.checks.find((c: { id: string }) => c.id === "capture")).toMatchObject({ ok: false });
+      sup.dispose();
+    });
+
     it("a check that changes state triggers an immediate heartbeat (without waiting 30 s)", async () => {
       const { api, sup } = setup();
       sup.boot();

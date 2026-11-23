@@ -9,7 +9,10 @@ const RTSP_IO_TIMEOUT_US = 5_000_000;
 /** Both inputs are stamped with the same wall clock so that their relative offset survives the two separate clocks. */
 const WALLCLOCK = ["-use_wallclock_as_timestamps", "1"];
 
-export function defaultAudioBackend(platform: NodeJS.Platform = process.platform): AudioBackend {
+/** `core` is also compiled for the renderer (no Node types there): the platform is read defensively. */
+const hostPlatform = (): string => (globalThis as { process?: { platform?: string } }).process?.platform ?? "";
+
+export function defaultAudioBackend(platform: string = hostPlatform()): AudioBackend {
   return platform === "win32" ? "dshow" : platform === "darwin" ? "avfoundation" : "alsa";
 }
 
@@ -66,7 +69,8 @@ export class IpCameraLocalAudioSource implements CaptureSourceStrategy {
   buildCaptureArgs(c: IpCameraConfig, audioDelayMs: number, clockBaseS: number = clockBaseSeconds()): string[] {
     return [
       ...COMMON,
-      "-progress", "pipe:1", "-stats_period", "2",
+      // stdout is the media (fragmented MP4 for the application), so progress goes to stderr.
+      "-progress", "pipe:2", "-stats_period", "2",
       "-copyts",
       ...rtspInputArgs(c.rtspUrl),
       ...audioInputArgs(c),

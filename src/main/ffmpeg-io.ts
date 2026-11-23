@@ -1,4 +1,5 @@
 import { spawn, execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,10 +14,16 @@ export const spawnFfmpeg =
   (ffmpegPath = "ffmpeg"): ProcessSpawner =>
   (args) => {
     const child = spawn(ffmpegPath, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    // stdout carries the media (when the output is `pipe:1`); it must always be drained or ffmpeg would block.
+    let consumed = false;
+    queueMicrotask(() => !consumed && child.stdout.resume());
     return {
       onLine(cb) {
-        createInterface({ input: child.stdout }).on("line", (l) => cb(l, "out"));
         createInterface({ input: child.stderr }).on("line", (l) => cb(l, "err"));
+      },
+      onData(cb) {
+        consumed = true;
+        child.stdout.on("data", (d: Buffer) => cb(d));
       },
       onExit(cb) {
         child.once("close", (code) => cb(code));
@@ -50,6 +57,19 @@ export const nodeCalibrationIo = (ffmpegPath = "ffmpeg"): CalibrationIo => ({
   },
   readText: (p) => readFile(p, "utf8"),
 });
+
+/**
+ * ffmpeg for this installation: SADA_FFMPEG, else the copy shipped next to the application (installer, Windows),
+ * else the one on the PATH.
+ */
+export function resolveFfmpeg(resourcesDir: string | null, platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env): string {
+  if (env.SADA_FFMPEG) return env.SADA_FFMPEG;
+  if (resourcesDir) {
+    const bundled = join(resourcesDir, "ffmpeg", platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
+    if (existsSync(bundled)) return bundled;
+  }
+  return "ffmpeg";
+}
 
 /** DirectShow audio inputs of this PC (Windows); empty elsewhere or when ffmpeg is missing. */
 export function listDshowAudioDevices(ffmpegPath = "ffmpeg"): Promise<string[]> {

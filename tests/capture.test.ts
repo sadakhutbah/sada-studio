@@ -164,7 +164,7 @@ class FakeProc implements RunningProcess {
   onLine(cb: FakeProc["lineCb"]) { this.lineCb = cb; }
   onExit(cb: FakeProc["exitCb"]) { this.exitCb = cb; }
   kill() { this.killed = true; queueMicrotask(() => this.exitCb(null)); }
-  frame(n: number) { this.lineCb(`frame=${n}`, "out"); }
+  frame(n: number) { this.lineCb(`frame=${n}`, "err"); }
 }
 
 describe("capture controller", () => {

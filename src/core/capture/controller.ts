@@ -4,10 +4,12 @@ import { t } from "../messages";
 import { CaptureMachine, isProlongedOutage, type CaptureState } from "./machine";
 import { normalizeDelay, type AudioOffsetStore, type CaptureSourceStrategy, type IpCameraConfig } from "./types";
 
-/** A running ffmpeg. Lines are the `-progress` key=value lines (stdout) and the warnings (stderr). */
+/** A running ffmpeg. Lines are the `-progress` key=value lines and the warnings (both on stderr; stdout carries the media). */
 export interface RunningProcess {
   onLine(cb: (line: string, stream: "out" | "err") => void): void;
   onExit(cb: (code: number | null) => void): void;
+  /** Raw bytes written on stdout (the media when the output is `pipe:1`). */
+  onData?(cb: (chunk: Uint8Array) => void): void;
   kill(): void;
 }
 
@@ -33,6 +35,9 @@ export interface CaptureControllerOptions {
   watchdogMs?: number;
   backoff?: Backoff;
 }
+
+/** `-progress` output: `key=value` lines (frame=12, fps=25.0, progress=continue…). */
+const PROGRESS_LINE = /^[a-z_0-9]+=\S*$/;
 
 /** Key under which an audio device's calibrated delay is stored. */
 export const deviceKey = (c: Pick<IpCameraConfig, "audioBackend" | "audioDevice">) => `${c.audioBackend}:${c.audioDevice}`;
@@ -149,7 +154,7 @@ export class CaptureController {
       return;
     }
     this.proc = p;
-    p.onLine((line, stream) => (stream === "out" ? this.onProgress(line) : this.keepErr(line)));
+    p.onLine((line) => (PROGRESS_LINE.test(line.trim()) ? this.onProgress(line) : this.keepErr(line)));
     p.onExit((code) => {
       if (this.proc !== p) return;
       this.proc = null;

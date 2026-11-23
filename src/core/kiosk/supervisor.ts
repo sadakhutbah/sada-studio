@@ -86,6 +86,7 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n
 export class KioskSupervisor {
   private state: KioskState = INITIAL_KIOSK;
   private device: DeviceCredentials | null = null;
+  private extraChecks: () => HealthCheck[] = () => [];
   private report: ClientReport = { sessionState: "idle", camera: false, micro: false, bitrateKbps: 0, checks: [], lastError: null, startFailure: null };
   private lastBeatAt = 0;
   private beating = false;
@@ -296,7 +297,19 @@ export class KioskSupervisor {
       this.persistNow();
       this.emit();
     }
-    // A check changes state (camera unplugged, session error…): the server learns of it without waiting for the normal cadence.
+    this.refreshChecks();
+  }
+
+  /**
+   * Checks produced by the main process itself (the IP camera capture, …) are added to the ones the UI reports,
+   * read at each heartbeat so they are never stale.
+   */
+  setCheckProvider(provider: () => HealthCheck[]): void {
+    this.extraChecks = provider;
+  }
+
+  /** A check changes state (camera unplugged, session error, capture outage…): the server learns of it without waiting for the normal cadence. */
+  refreshChecks(): void {
     const sig = this.healthSignature();
     if (sig !== this.signature) {
       const first = this.signature === "";
@@ -305,9 +318,13 @@ export class KioskSupervisor {
     }
   }
 
+  private allChecks(): HealthCheck[] {
+    return [...this.report.checks, ...this.extraChecks()];
+  }
+
   private healthSignature(): string {
     const r = this.report;
-    const ok = r.checks.map((c) => `${c.id}:${c.ok ? 1 : 0}`).join(",");
+    const ok = this.allChecks().map((c) => `${c.id}:${c.ok ? 1 : 0}`).join(",");
     return `${ok}|${this.networkCheck().ok ? 1 : 0}|${r.lastError?.code ?? ""}|${r.startFailure ? 1 : 0}`;
   }
 
@@ -331,7 +348,7 @@ export class KioskSupervisor {
 
   private healthPayload(): HealthPayload {
     return {
-      checks: [...this.report.checks, this.networkCheck()],
+      checks: [...this.allChecks(), this.networkCheck()],
       last_error: this.report.lastError,
       live_start_failure: this.report.startFailure ? { message: this.report.startFailure } : null,
     };
