@@ -85,3 +85,7 @@ Dev-only knobs (ignored by an installed application): `SADA_STUDIO_AUDIO_BACKEND
 - A delay above ~1 s with `aresample async` loses beeps in some runs; real needs are a few hundred ms.
 - The WebRTC leg to Sada itself was not exercised against a real Sada server (the mock has no media); the captured tracks were
   sent through a loopback RTCPeerConnection (video frames decoded, audio packets received).
+
+## Webcam mode (PC camera)
+
+Same assistant and same "Advanced" section. The delay is applied in the renderer: a Web Audio `DelayNode` sits between the microphone and the track handed to WHIP (`core/sources/audio-delay.ts`), so a change is live (no capture restart). It is saved in the UI preferences per camera/microphone pair (`webcamDelays`). Calibration records the microphone level (before the delay) and the picture motion in the renderer (`webcam-calibration.ts`) and uses the same analysis as the IP camera (`calibrateSeries`). Without Web Audio the stream is used as is.
