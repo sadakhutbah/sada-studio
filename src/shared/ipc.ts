@@ -40,6 +40,21 @@ export interface MediaAccess {
   microphone: boolean;
 }
 
+export interface ProjectorDisplay {
+  id: number;
+  /** 1-based position in the system's list. */
+  index: number;
+  external: boolean;
+  width: number;
+  height: number;
+}
+
+/** WebRTC signalling relayed between the operator window and the projector window. */
+export type ProjectorSignal =
+  | { kind: "ready" }
+  | { kind: "offer" | "answer"; sdp: string }
+  | { kind: "ice"; candidate: RTCIceCandidateInit };
+
 /** What the main process exposes to the UI (`window.studio`). */
 export interface StudioBridge {
   capture: CaptureBridge;
@@ -47,6 +62,15 @@ export interface StudioBridge {
     /** Asks once (macOS), then only reads the status: safe to call repeatedly. */
     access(): Promise<MediaAccess>;
     openSettings(kind: "camera" | "microphone"): Promise<void>;
+  };
+  projector: {
+    displays(): Promise<ProjectorDisplay[]>;
+    isOpen(): Promise<boolean>;
+    open(displayId: number | null): Promise<void>;
+    close(): Promise<void>;
+    onState(cb: (open: boolean) => void): () => void;
+    signal(msg: ProjectorSignal): void;
+    onSignal(cb: (msg: ProjectorSignal) => void): () => void;
   };
   kiosk: {
     get(): Promise<KioskSnapshot>;

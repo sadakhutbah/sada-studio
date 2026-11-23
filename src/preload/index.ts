@@ -26,6 +26,23 @@ const bridge: StudioBridge = {
     access: () => ipcRenderer.invoke("media:access"),
     openSettings: (kind) => ipcRenderer.invoke("media:open-settings", kind),
   },
+  projector: {
+    displays: () => ipcRenderer.invoke("projector:displays"),
+    isOpen: () => ipcRenderer.invoke("projector:is-open"),
+    open: (id) => ipcRenderer.invoke("projector:open", id),
+    close: () => ipcRenderer.invoke("projector:close"),
+    onState: (cb) => {
+      const listener = (_e: unknown, v: boolean) => cb(v);
+      ipcRenderer.on("projector:state", listener);
+      return () => void ipcRenderer.removeListener("projector:state", listener);
+    },
+    signal: (m) => ipcRenderer.send("projector:signal", m),
+    onSignal: (cb) => {
+      const listener = (_e: unknown, m: Parameters<typeof cb>[0]) => cb(m);
+      ipcRenderer.on("projector:signal", listener);
+      return () => void ipcRenderer.removeListener("projector:signal", listener);
+    },
+  },
   kiosk: {
     get: () => ipcRenderer.invoke("kiosk:get"),
     onChange: (cb) => {

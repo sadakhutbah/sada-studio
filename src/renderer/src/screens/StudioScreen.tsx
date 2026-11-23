@@ -16,6 +16,7 @@ import { fill, fr } from "../strings";
 import { t } from "@core/messages";
 import { Brand, Btn, Card, ErrorBox, Field, inputClass, Kicker, StatusPill, Title, type PillKey } from "../ui";
 import { HealthPanel } from "./HealthPanel";
+import { ProjectorPanel } from "./ProjectorPanel";
 import { SettingsPanel } from "./SettingsPanel";
 
 const kindLabel = (k: StreamKind) => fr.live[k];
@@ -285,6 +286,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
               </div>
             )}
           </Card>
+          <ProjectorPanel stream={stream} onAir={onAir} prefs={prefs} setPrefs={update} />
           {kiosk.stopPending && <p className="m-0 text-[0.85rem] text-muted">{fr.stop.pending}</p>}
           {state.status === "error" && state.error && state.errorCode !== "conflict" && <ErrorBox>{state.error}</ErrorBox>}
           {conflict && (
