@@ -1,4 +1,10 @@
-import type { StreamMeta } from "../core/api/types";
+import type {
+  LiveStatus,
+  OverlayKind,
+  OverlayUpdateResponse,
+  RegieData,
+  StudioConfigResponse,
+} from "../core/api/types";
 import type { CalibrationView, CaptureSettings, CaptureView } from "../core/capture/settings";
 import type { WindowsFacts } from "../core/health/health";
 import type { ClientReport, KioskView } from "../core/kiosk/supervisor";
