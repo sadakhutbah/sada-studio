@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import type { LiveOverlays, LiveStatus, OverlayCorner, OverlayKind, RegieData } from "../../../core/api/types";
+import type { LiveOverlays, LiveStatus, OverlayCorner, OverlayKind, RegieData } from "@core/api/types";
+import type {
+  BrowserSourceConfig,
+  BrowserSourceCorner,
+  BrowserSourceMode,
+  BrowserSourceSize,
+  BrowserSourceStatus,
+  DesktopSourceInfo,
+} from "@core/sources/types";
+import { bridge } from "../bridge";
 import { Btn, Card } from "../ui";
 import { t } from "../strings";
 
@@ -18,9 +27,25 @@ const SCENES = [
 ];
 
 const CORNERS: OverlayCorner[] = ["tl", "tr", "bl", "br"];
+const BROWSER_MODES: BrowserSourceMode[] = ["overlay", "fullscreen"];
+const BROWSER_SIZES: BrowserSourceSize[] = ["sm", "md", "lg"];
+
 const inputCls =
   "rounded-[7px] border border-night-line bg-night-deep px-2.5 py-1.5 text-[0.85rem] text-night-ink placeholder:text-night-dim";
 const smallBtn = "min-h-8 px-2.5 py-1 text-[0.84rem]";
+
+export interface RegiePanelProps {
+  browserSource: BrowserSourceConfig;
+  browserStatus: BrowserSourceStatus;
+  onBrowserSourceChange: (next: BrowserSourceConfig) => void;
+  onBrowserSourceReload: () => void;
+  screenActive: boolean;
+  screenSourceId: string;
+  desktopSources: DesktopSourceInfo[];
+  onScreenToggle: () => void;
+  onScreenSelect: (sourceId: string) => void;
+  onScreenRefresh: () => void;
+}
 
 function EyeBtn({
   visible,
@@ -64,7 +89,18 @@ function EyeBtn({
   );
 }
 
-export function RegiePanel() {
+export function RegiePanel({
+  browserSource,
+  browserStatus,
+  onBrowserSourceChange,
+  onBrowserSourceReload,
+  screenActive,
+  screenSourceId,
+  desktopSources,
+  onScreenToggle,
+  onScreenSelect,
+  onScreenRefresh,
+}: RegiePanelProps) {
   const [data, setData] = useState<RegieData | null>(null);
   const [status, setStatus] = useState<LiveStatus | null>(null);
   const [overlays, setOverlays] = useState<LiveOverlays>(DEFAULT_OVERLAYS);
@@ -73,8 +109,13 @@ export function RegiePanel() {
   const [qrCorner, setQrCorner] = useState<OverlayCorner>("tr");
   const [bannerTitle, setBannerTitle] = useState("");
   const [bannerSubtitle, setBannerSubtitle] = useState("");
+  const [browserUrl, setBrowserUrl] = useState(browserSource.url);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setBrowserUrl(browserSource.url);
+  }, [browserSource.url]);
 
   function hydrateOverlays(ov?: LiveOverlays, updateFields = false) {
     if (!ov) return;
@@ -90,8 +131,8 @@ export function RegiePanel() {
 
   useEffect(() => {
     let active = true;
-    window.sadaStudio
-      .getRegie()
+    bridge.regie
+      .get()
       .then((d) => {
         if (!active) return;
         setData(d);
@@ -103,8 +144,8 @@ export function RegiePanel() {
       });
 
     const id = window.setInterval(() => {
-      window.sadaStudio
-        .getLiveStatus()
+      bridge.regie
+        .status()
         .then((s) => {
           if (!active) return;
           setStatus(s);
@@ -125,8 +166,8 @@ export function RegiePanel() {
     setBusy(true);
     setErr(null);
     try {
-      await window.sadaStudio.sendLiveCommand(cmd);
-      const s = await window.sadaStudio.getLiveStatus();
+      await bridge.regie.command(cmd);
+      const s = await bridge.regie.status();
       setStatus(s);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -139,7 +180,7 @@ export function RegiePanel() {
     setBusy(true);
     setErr(null);
     try {
-      const r = await window.sadaStudio.setLiveOverlay(kind, payload);
+      const r = await bridge.regie.setOverlay(kind, payload);
       hydrateOverlays(r.overlays, true);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -152,13 +193,14 @@ export function RegiePanel() {
   const reachable = Boolean(st.reachable);
   const scene = st.scene || "";
   const isAuto = !st.override;
+  const displayErr = err || browserStatus.error;
 
   return (
     <Card title={t.regie.title}>
       <div className="flex flex-col gap-3">
-        {err && (
+        {displayErr && (
           <div className="rounded-[7px] border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-[0.84rem] text-red-200">
-            {err}
+            {displayErr}
           </div>
         )}
 
@@ -175,7 +217,7 @@ export function RegiePanel() {
                 variant={scene === s.scene ? "primary" : "secondary"}
                 className={smallBtn}
                 disabled={busy || !reachable}
-                onClick={() => sendCmd(s.cmd)}
+                onClick={() => void sendCmd(s.cmd)}
               >
                 {t.regie.scene[s.cmd]}
               </Btn>
@@ -184,14 +226,156 @@ export function RegiePanel() {
               variant={isAuto && reachable ? "primary" : "secondary"}
               className={smallBtn}
               disabled={busy || !reachable}
-              onClick={() => sendCmd("auto")}
+              onClick={() => void sendCmd("auto")}
             >
               {t.regie.auto}
             </Btn>
           </div>
         </div>
 
-        {/* Sources / Incrustations */}
+        {/* Sources locales (Source web & Partage d'écran) */}
+        <div className="flex flex-col gap-2.5 border-t border-night-line pt-3">
+          <div className="flex items-center justify-between text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-night-dim">
+            <span>{t.regie.localSources}</span>
+            {browserStatus.loading && (
+              <span className="font-normal normal-case tracking-normal">{t.regie.browserLoading}</span>
+            )}
+          </div>
+
+          {/* Source web (Browser Source) */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <EyeBtn
+              visible={browserSource.visible}
+              label={`${browserSource.visible ? t.regie.hide : t.regie.show} — ${t.regie.browserSource}`}
+              disabled={!browserUrl.trim() && !browserSource.visible}
+              onClick={() =>
+                onBrowserSourceChange({
+                  ...browserSource,
+                  url: browserUrl,
+                  visible: !browserSource.visible,
+                })
+              }
+            />
+            <span className="min-w-[115px] text-[0.85rem] font-medium text-night-ink">
+              {t.regie.browserSource}
+            </span>
+            <input
+              type="url"
+              value={browserUrl}
+              onChange={(e) => setBrowserUrl(e.target.value)}
+              placeholder={t.regie.browserUrl}
+              maxLength={2048}
+              className={`${inputCls} min-w-[190px] flex-1`}
+            />
+            <select
+              value={browserSource.mode}
+              onChange={(e) =>
+                onBrowserSourceChange({
+                  ...browserSource,
+                  url: browserUrl,
+                  mode: e.target.value as BrowserSourceMode,
+                })
+              }
+              aria-label={t.regie.browserSource}
+              className={inputCls}
+            >
+              {BROWSER_MODES.map((m) => (
+                <option key={m} value={m}>
+                  {t.regie.browserModes[m]}
+                </option>
+              ))}
+            </select>
+            {browserSource.mode === "overlay" && (
+              <>
+                <select
+                  value={browserSource.corner}
+                  onChange={(e) =>
+                    onBrowserSourceChange({
+                      ...browserSource,
+                      url: browserUrl,
+                      corner: e.target.value as BrowserSourceCorner,
+                    })
+                  }
+                  aria-label={t.regie.browserSource}
+                  className={inputCls}
+                >
+                  {CORNERS.map((c) => (
+                    <option key={c} value={c}>
+                      {t.regie.corners[c]}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={browserSource.size}
+                  onChange={(e) =>
+                    onBrowserSourceChange({
+                      ...browserSource,
+                      url: browserUrl,
+                      size: e.target.value as BrowserSourceSize,
+                    })
+                  }
+                  aria-label={t.regie.browserSource}
+                  className={inputCls}
+                >
+                  {BROWSER_SIZES.map((s) => (
+                    <option key={s} value={s}>
+                      {t.regie.browserSizes[s]}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            <Btn
+              variant="secondary"
+              className={smallBtn}
+              disabled={!browserUrl.trim()}
+              onClick={() =>
+                onBrowserSourceChange({
+                  ...browserSource,
+                  url: browserUrl,
+                })
+              }
+            >
+              {t.regie.apply}
+            </Btn>
+            {browserSource.visible && (
+              <Btn variant="secondary" className={smallBtn} onClick={onBrowserSourceReload}>
+                {t.regie.browserReload}
+              </Btn>
+            )}
+          </div>
+
+          {/* Partage d'écran / fenêtre */}
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-night-line/60 pt-2.5">
+            <EyeBtn
+              visible={screenActive}
+              label={`${screenActive ? t.regie.hide : t.regie.show} — ${t.regie.screenShare}`}
+              disabled={!screenSourceId && !screenActive}
+              onClick={onScreenToggle}
+            />
+            <span className="min-w-[115px] text-[0.85rem] font-medium text-night-ink">
+              {t.regie.screenShare}
+            </span>
+            <select
+              value={screenSourceId}
+              onChange={(e) => onScreenSelect(e.target.value)}
+              aria-label={t.regie.screenShare}
+              className={`${inputCls} min-w-[210px] flex-1`}
+            >
+              <option value="">{t.regie.screenNone}</option>
+              {desktopSources.map((src) => (
+                <option key={src.id} value={src.id}>
+                  {src.kind === "screen" ? t.regie.screenKindScreen : t.regie.screenKindWindow} — {src.name}
+                </option>
+              ))}
+            </select>
+            <Btn variant="secondary" className={smallBtn} onClick={onScreenRefresh}>
+              {t.regie.screenRefresh}
+            </Btn>
+          </div>
+        </div>
+
+        {/* Incrustations serveur */}
         <div className="flex flex-col gap-2.5 border-t border-night-line pt-3">
           <div className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-night-dim">
             {t.regie.overlays}
@@ -204,7 +388,7 @@ export function RegiePanel() {
               label={`${overlays.qr.visible ? t.regie.hide : t.regie.show} — ${t.regie.qr}`}
               disabled={busy}
               onClick={() =>
-                updateOverlay("qr", {
+                void updateOverlay("qr", {
                   visible: !overlays.qr.visible,
                   url: qrUrl,
                   label: qrLabel,
@@ -246,7 +430,7 @@ export function RegiePanel() {
               className={smallBtn}
               disabled={busy}
               onClick={() =>
-                updateOverlay("qr", {
+                void updateOverlay("qr", {
                   visible: overlays.qr.visible,
                   url: qrUrl,
                   label: qrLabel,
@@ -265,7 +449,7 @@ export function RegiePanel() {
               label={`${overlays.banner.visible ? t.regie.hide : t.regie.show} — ${t.regie.banner}`}
               disabled={busy}
               onClick={() =>
-                updateOverlay("banner", {
+                void updateOverlay("banner", {
                   visible: !overlays.banner.visible,
                   title: bannerTitle,
                   subtitle: bannerSubtitle,
@@ -294,7 +478,7 @@ export function RegiePanel() {
               className={smallBtn}
               disabled={busy}
               onClick={() =>
-                updateOverlay("banner", {
+                void updateOverlay("banner", {
                   visible: overlays.banner.visible,
                   title: bannerTitle,
                   subtitle: bannerSubtitle,
@@ -311,7 +495,7 @@ export function RegiePanel() {
               visible={overlays.logo.visible}
               label={`${overlays.logo.visible ? t.regie.hide : t.regie.show} — ${t.regie.logo}`}
               disabled={busy}
-              onClick={() => updateOverlay("logo", { visible: !overlays.logo.visible })}
+              onClick={() => void updateOverlay("logo", { visible: !overlays.logo.visible })}
             />
             <span className="text-[0.85rem] font-medium text-night-ink">{t.regie.logo}</span>
           </div>
