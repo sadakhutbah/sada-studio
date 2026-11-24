@@ -19,6 +19,7 @@ import type {
   StreamKind,
   StreamMeta,
   StudioApi,
+  TransitionMode,
 } from "./types";
 
 const API = "/api/v1";
@@ -140,8 +141,18 @@ export class SadaHttpApi implements StudioApi {
     return this.json<LiveStatus>("GET", `${API}/studio/live/status`, { device: true });
   }
 
-  async sendLiveCommand(command: string): Promise<void> {
-    await this.json("POST", `${API}/studio/live/command`, { json: { command }, device: true });
+  async sendLiveCommand(command: string, arg?: string, transition?: TransitionMode): Promise<LiveStatus> {
+    const body: Record<string, unknown> = { command };
+    if (arg !== undefined) body.arg = arg;
+    if (transition !== undefined) body.transition = transition;
+    return this.json<LiveStatus>("POST", `${API}/studio/live/command`, { json: body, device: true });
+  }
+
+  async setTransition(mode: TransitionMode): Promise<{ ok: boolean; transition: TransitionMode }> {
+    return this.json<{ ok: boolean; transition: TransitionMode }>("POST", `${API}/live/regie/transition`, {
+      json: { mode },
+      device: true,
+    });
   }
 
   async setLiveOverlay(kind: OverlayKind, payload: Record<string, unknown>): Promise<OverlayUpdateResponse> {
@@ -343,8 +354,15 @@ export class SadaApiClient {
     return this.request<LiveStatus>("GET", `${API}/studio/live/status`);
   }
 
-  sendLiveCommand(command: string): Promise<void> {
-    return this.request<void>("POST", `${API}/studio/live/command`, { command });
+  sendLiveCommand(command: string, arg?: string, transition?: TransitionMode): Promise<LiveStatus> {
+    const body: Record<string, unknown> = { command };
+    if (arg !== undefined) body.arg = arg;
+    if (transition !== undefined) body.transition = transition;
+    return this.request<LiveStatus>("POST", `${API}/studio/live/command`, body);
+  }
+
+  setTransition(mode: TransitionMode): Promise<{ ok: boolean; transition: TransitionMode }> {
+    return this.request<{ ok: boolean; transition: TransitionMode }>("POST", `${API}/studio/live/transition`, { mode });
   }
 
   setLiveOverlay(kind: OverlayKind, payload: Record<string, unknown>): Promise<OverlayUpdateResponse> {

@@ -2,9 +2,8 @@ import { app, BrowserWindow, ipcMain, powerSaveBlocker } from "electron";
 import { appendFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { ensureMediaAccess, openMediaSettings } from "./media-access";
-import { SadaApiClient } from "../core/api/sada-api";
-import type { OverlayKind } from "../core/api/types";
-import type { StreamMeta } from "../core/api/types";
+import { SadaHttpApi } from "../core/api/sada-api";
+import type { OverlayKind, StreamMeta, TransitionMode } from "../core/api/types";
 import { t } from "../core/messages";
 import { ApiError } from "../core/errors";
 import { KioskSupervisor, type ClientReport } from "../core/kiosk/supervisor";
@@ -143,6 +142,15 @@ export function registerIpc(version: string): Kiosk {
     run(async () => (await api.whip.patchIce(resource, fragment), null)),
   );
   ipcMain.handle("studio:whip-close", (_e, resource: string) => run(async () => (await api.whip.close(resource), null)));
+  ipcMain.handle("regie:get", () => run(() => api.getRegie()));
+  ipcMain.handle("regie:status", () => run(() => api.getLiveStatus()));
+  ipcMain.handle("regie:command", (_e, cmd: string, arg?: string, tr?: TransitionMode) =>
+    run(() => api.sendLiveCommand(cmd, arg, tr)),
+  );
+  ipcMain.handle("regie:set-transition", (_e, mode: TransitionMode) => run(() => api.setTransition(mode)));
+  ipcMain.handle("regie:set-overlay", (_e, kind: OverlayKind, payload: Record<string, unknown>) =>
+    run(() => api.setLiveOverlay(kind, payload)),
+  );
 
   supervisor.boot();
   return { supervisor, capture, snapshot };

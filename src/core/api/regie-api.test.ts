@@ -43,25 +43,25 @@ describe("SadaApiClient regie & overlays", () => {
         }),
       });
 
-    const client = new SadaApiClient("https://sada.example", mockFetch as unknown as typeof fetch);
+    const client = new SadaApiClient("https://sada.example", "tok-123", mockFetch as unknown as typeof fetch);
 
-    const regie = await client.getRegie("tok-123");
+    const regie = await client.getRegie();
     expect(regie.slug).toBe("grande");
     expect(mockFetch).toHaveBeenNthCalledWith(
       1,
-      "https://sada.example/api/live/regie",
+      "https://sada.example/api/v1/studio/regie",
       expect.objectContaining({ method: "GET" })
     );
 
-    const cmdRes = await client.sendLiveCommand("tok-123", "before");
+    const cmdRes = await client.sendLiveCommand("before");
     expect(cmdRes.reachable).toBe(true);
     expect(mockFetch).toHaveBeenNthCalledWith(
       2,
-      "https://sada.example/api/live/command/before",
+      "https://sada.example/api/v1/studio/live/command",
       expect.objectContaining({ method: "POST" })
     );
 
-    const ovRes = await client.setLiveOverlay("tok-123", "qr", {
+    const ovRes = await client.setLiveOverlay("qr", {
       visible: true,
       url: "https://sada.example/don",
       label: "Don",
@@ -71,8 +71,8 @@ describe("SadaApiClient regie & overlays", () => {
     expect(ovRes.overlays.qr.corner).toBe("br");
     expect(mockFetch).toHaveBeenNthCalledWith(
       3,
-      "https://sada.example/api/live/overlays/qr",
-      expect.objectContaining({ method: "PUT" })
+      "https://sada.example/api/v1/studio/live/overlays/qr",
+      expect.objectContaining({ method: "PATCH" })
     );
   });
 });

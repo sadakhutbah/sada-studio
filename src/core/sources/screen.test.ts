@@ -43,8 +43,8 @@ describe("ScreenSource", () => {
 
     const registry = new SourceRegistry();
     const screen = new ScreenSource({ getUserMedia });
-    registry.register(screen);
-    const routing = new RoutingSource(registry);
+    registry.register("screen", () => screen);
+    const routing = new RoutingSource({ screen: registry.create("screen") }, "screen");
 
     const stream = await routing.acquire({
       sourceKind: "screen",

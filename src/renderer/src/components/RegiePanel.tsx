@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import type { LiveOverlays, LiveStatus, OverlayCorner, OverlayKind, RegieData } from "@core/api/types";
+import type {
+  LiveOverlays,
+  LiveStatus,
+  OverlayCorner,
+  OverlayKind,
+  RegieData,
+  RegieScene,
+  TransitionMode,
+} from "@core/api/types";
 import type {
   BrowserSourceConfig,
   BrowserSourceCorner,
@@ -9,8 +17,9 @@ import type {
   DesktopSourceInfo,
 } from "@core/sources/types";
 import { bridge } from "../bridge";
+import { resolveRegieShortcut } from "../regie-shortcuts";
 import { Btn, Card } from "../ui";
-import { t } from "../strings";
+import { fr as t } from "../strings";
 
 const DEFAULT_OVERLAYS: LiveOverlays = {
   qr: { visible: false, url: "", label: "", corner: "tr" },
@@ -18,12 +27,12 @@ const DEFAULT_OVERLAYS: LiveOverlays = {
   logo: { visible: false },
 };
 
-const SCENES = [
-  { cmd: "live", scene: "direct" },
-  { cmd: "before", scene: "avant" },
-  { cmd: "prayer", scene: "priere" },
-  { cmd: "intermission", scene: "entracte" },
-  { cmd: "ended", scene: "termine" },
+const FALLBACK_SCENES: RegieScene[] = [
+  { id: "khutba", kind: "camera", label: t.regie.scene.live },
+  { id: "avant", kind: "slate", label: t.regie.scene.before },
+  { id: "priere", kind: "slate", label: t.regie.scene.prayer },
+  { id: "entracte", kind: "slate", label: t.regie.scene.intermission },
+  { id: "termine", kind: "slate", label: t.regie.scene.ended },
 ];
 
 const CORNERS: OverlayCorner[] = ["tl", "tr", "bl", "br"];
@@ -103,6 +112,8 @@ export function RegiePanel({
 }: RegiePanelProps) {
   const [data, setData] = useState<RegieData | null>(null);
   const [status, setStatus] = useState<LiveStatus | null>(null);
+  const [staged, setStaged] = useState<string>("khutba");
+  const [transition, setTransition] = useState<TransitionMode>("fade");
   const [overlays, setOverlays] = useState<LiveOverlays>(DEFAULT_OVERLAYS);
   const [qrUrl, setQrUrl] = useState("");
   const [qrLabel, setQrLabel] = useState("");
@@ -137,6 +148,7 @@ export function RegiePanel({
         if (!active) return;
         setData(d);
         setStatus(d.status);
+        if (d.transition === "fade" || d.transition === "cut") setTransition(d.transition);
         hydrateOverlays(d.overlays ?? d.status?.overlays, true);
       })
       .catch((e) => {
@@ -149,6 +161,7 @@ export function RegiePanel({
         .then((s) => {
           if (!active) return;
           setStatus(s);
+          if (s.transition === "fade" || s.transition === "cut") setTransition(s.transition);
           if (s.overlays) setOverlays(s.overlays);
         })
         .catch(() => {
@@ -162,17 +175,36 @@ export function RegiePanel({
     };
   }, []);
 
-  async function sendCmd(cmd: string) {
+  async function sendCmd(cmd: string, arg?: string, tr?: TransitionMode) {
     setBusy(true);
     setErr(null);
     try {
-      await bridge.regie.command(cmd);
+      await bridge.regie.command(cmd, arg, tr);
       const s = await bridge.regie.status();
       setStatus(s);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function takeScene(sceneId: string) {
+    if (sceneId === "janaza") {
+      await sendCmd("janaza", undefined, transition);
+    } else {
+      await sendCmd("scene", sceneId, transition);
+    }
+  }
+
+  async function changeTransition(mode: TransitionMode) {
+    setTransition(mode);
+    setErr(null);
+    try {
+      const r = await bridge.regie.setTransition(mode);
+      setTransition(r.transition);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -194,6 +226,32 @@ export function RegiePanel({
   const scene = st.scene || "";
   const isAuto = !st.override;
   const displayErr = err || browserStatus.error;
+  const scenesList = data?.scenes && data.scenes.length > 0 ? data.scenes : FALLBACK_SCENES;
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const action = resolveRegieShortcut(
+        {
+          key: e.key,
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey,
+          altKey: e.altKey,
+          target: e.target instanceof HTMLElement ? e.target : null,
+        },
+        scenesList.length,
+      );
+      if (!action) return;
+      if (action.type === "stage") {
+        const sc = scenesList[action.index];
+        if (sc) setStaged(sc.id);
+      } else if (action.type === "take" && reachable && !busy) {
+        e.preventDefault();
+        void takeScene(staged);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [scenesList, staged, reachable, busy, transition]);
 
   return (
     <Card title={t.regie.title}>
@@ -208,22 +266,43 @@ export function RegiePanel({
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-night-dim">
             <span>{t.regie.scenes}</span>
-            {!reachable && <span className="font-normal normal-case tracking-normal">{t.regie.offline}</span>}
+            <div className="flex items-center gap-1.5">
+              <Btn
+                variante={transition === "fade" ? "plein" : "ghost"}
+                className={smallBtn}
+                disabled={busy}
+                onClick={() => void changeTransition("fade")}
+              >
+                {t.regie.transitions.fade}
+              </Btn>
+              <Btn
+                variante={transition === "cut" ? "plein" : "ghost"}
+                className={smallBtn}
+                disabled={busy}
+                onClick={() => void changeTransition("cut")}
+              >
+                {t.regie.transitions.cut}
+              </Btn>
+              {!reachable && <span className="font-normal normal-case tracking-normal">{t.regie.offline}</span>}
+            </div>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {SCENES.map((s) => (
+            {scenesList.map((s) => (
               <Btn
-                key={s.cmd}
-                variant={scene === s.scene ? "primary" : "secondary"}
-                className={smallBtn}
+                key={s.id}
+                variante={scene === s.id ? "plein" : "ghost"}
+                className={`${smallBtn} ${staged === s.id && scene !== s.id ? "ring-1 ring-leaf" : ""}`}
                 disabled={busy || !reachable}
-                onClick={() => void sendCmd(s.cmd)}
+                onClick={() => {
+                  setStaged(s.id);
+                  void takeScene(s.id);
+                }}
               >
-                {t.regie.scene[s.cmd]}
+                {s.label}
               </Btn>
             ))}
             <Btn
-              variant={isAuto && reachable ? "primary" : "secondary"}
+              variante={isAuto && reachable ? "plein" : "ghost"}
               className={smallBtn}
               disabled={busy || !reachable}
               onClick={() => void sendCmd("auto")}
@@ -326,7 +405,7 @@ export function RegiePanel({
               </>
             )}
             <Btn
-              variant="secondary"
+              variante="ghost"
               className={smallBtn}
               disabled={!browserUrl.trim()}
               onClick={() =>
@@ -339,7 +418,7 @@ export function RegiePanel({
               {t.regie.apply}
             </Btn>
             {browserSource.visible && (
-              <Btn variant="secondary" className={smallBtn} onClick={onBrowserSourceReload}>
+              <Btn variante="ghost" className={smallBtn} onClick={onBrowserSourceReload}>
                 {t.regie.browserReload}
               </Btn>
             )}
@@ -369,7 +448,7 @@ export function RegiePanel({
                 </option>
               ))}
             </select>
-            <Btn variant="secondary" className={smallBtn} onClick={onScreenRefresh}>
+            <Btn variante="ghost" className={smallBtn} onClick={onScreenRefresh}>
               {t.regie.screenRefresh}
             </Btn>
           </div>
@@ -426,7 +505,7 @@ export function RegiePanel({
               ))}
             </select>
             <Btn
-              variant="secondary"
+              variante="ghost"
               className={smallBtn}
               disabled={busy}
               onClick={() =>
@@ -474,7 +553,7 @@ export function RegiePanel({
               className={`${inputCls} min-w-[140px] flex-1`}
             />
             <Btn
-              variant="secondary"
+              variante="ghost"
               className={smallBtn}
               disabled={busy}
               onClick={() =>

@@ -62,6 +62,13 @@ const bridge: StudioBridge = {
   whipOffer: (sdp) => ipcRenderer.invoke("studio:whip-offer", sdp),
   whipPatch: (resource, fragment) => ipcRenderer.invoke("studio:whip-patch", resource, fragment),
   whipClose: (resource) => ipcRenderer.invoke("studio:whip-close", resource),
+  regie: {
+    get: () => ipcRenderer.invoke("regie:get"),
+    status: () => ipcRenderer.invoke("regie:status"),
+    command: (cmd, arg, transition) => ipcRenderer.invoke("regie:command", cmd, arg, transition),
+    setTransition: (mode) => ipcRenderer.invoke("regie:set-transition", mode),
+    setOverlay: (kind, payload) => ipcRenderer.invoke("regie:set-overlay", kind, payload),
+  },
 };
 
 contextBridge.exposeInMainWorld("studio", bridge);
