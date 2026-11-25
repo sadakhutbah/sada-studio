@@ -2,7 +2,10 @@ import type { MediaSourceStrategy } from "./types";
 
 export type SourceFactory = () => MediaSourceStrategy;
 
-/** Source registry: each source registers its own strategy, without touching the session or the transport. */
+/**
+ * Source registry. Extension point: screen sharing ("screen") will register here with
+ * its own strategy, without touching the session or the transport.
+ */
 export class SourceRegistry {
   private readonly factories = new Map<string, SourceFactory>();
 
