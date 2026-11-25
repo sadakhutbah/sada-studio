@@ -8,14 +8,6 @@ import type {
   RegieScene,
   TransitionMode,
 } from "@core/api/types";
-import type {
-  BrowserSourceConfig,
-  BrowserSourceCorner,
-  BrowserSourceMode,
-  BrowserSourceSize,
-  BrowserSourceStatus,
-  DesktopSourceInfo,
-} from "@core/sources/types";
 import { meterPosition } from "@core/audio/meter";
 import { bridge } from "../bridge";
 import type { RegieLiveView } from "../regie-preview";
@@ -38,8 +30,6 @@ const FALLBACK_SCENES: RegieScene[] = [
 ];
 
 const CORNERS: OverlayCorner[] = ["tl", "tr", "bl", "br"];
-const BROWSER_MODES: BrowserSourceMode[] = ["overlay", "fullscreen"];
-const BROWSER_SIZES: BrowserSourceSize[] = ["sm", "md", "lg"];
 
 const inputCls =
   "min-h-9 rounded-[7px] border border-[#b9ae94] bg-white px-2.5 py-1.5 text-[0.9rem] text-ink placeholder:text-[#6f7a73] focus:border-deep disabled:bg-paper-2 disabled:text-muted";
@@ -56,22 +46,7 @@ export interface RegiePanelProps {
   /** Scene and overlays currently requested: drawn over the monitor by the parent. */
   onLiveChange?: (view: RegieLiveView) => void;
   audio?: RegieAudioProps;
-  /** Local sources (web source, screen share): the section is hidden while these are not wired. */
-  browserSource?: BrowserSourceConfig;
-  browserStatus?: BrowserSourceStatus;
-  onBrowserSourceChange?: (next: BrowserSourceConfig) => void;
-  onBrowserSourceReload?: () => void;
-  screenActive?: boolean;
-  screenSourceId?: string;
-  desktopSources?: DesktopSourceInfo[];
-  onScreenToggle?: () => void;
-  onScreenSelect?: (sourceId: string) => void;
-  onScreenRefresh?: () => void;
 }
-
-const NO_BROWSER: BrowserSourceConfig = { url: "", visible: false, mode: "overlay", corner: "br", size: "md" };
-const NO_BROWSER_STATUS: BrowserSourceStatus = { active: false, loading: false, url: "", error: null };
-const noop = () => undefined;
 
 /** Level meter + mute button of the Régie panel. */
 export function AudioStrip({ level, muted, onToggleMute }: RegieAudioProps) {
@@ -151,21 +126,7 @@ function EyeBtn({
   );
 }
 
-export function RegiePanel({
-  audio,
-  onLiveChange,
-  browserSource = NO_BROWSER,
-  browserStatus = NO_BROWSER_STATUS,
-  onBrowserSourceChange = noop,
-  onBrowserSourceReload = noop,
-  screenActive = false,
-  screenSourceId = "",
-  desktopSources = [],
-  onScreenToggle = noop,
-  onScreenSelect = noop,
-  onScreenRefresh = noop,
-}: RegiePanelProps) {
-  const hasLocalSources = onBrowserSourceChange !== noop;
+export function RegiePanel({ audio, onLiveChange }: RegiePanelProps) {
   const [data, setData] = useState<RegieData | null>(null);
   const [status, setStatus] = useState<LiveStatus | null>(null);
   const [staged, setStaged] = useState<string>("khutba");
@@ -176,13 +137,6 @@ export function RegiePanel({
   const [qrCorner, setQrCorner] = useState<OverlayCorner>("tr");
   const [bannerTitle, setBannerTitle] = useState("");
   const [bannerSubtitle, setBannerSubtitle] = useState("");
-  const [browserUrl, setBrowserUrl] = useState(browserSource.url);
-  const [prevSourceUrl, setPrevSourceUrl] = useState(browserSource.url);
-  // Prop change (reload, default) resets the field: state adjusted during render, not in an effect.
-  if (prevSourceUrl !== browserSource.url) {
-    setPrevSourceUrl(browserSource.url);
-    setBrowserUrl(browserSource.url);
-  }
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -288,7 +242,7 @@ export function RegiePanel({
   const reachable = Boolean(st.reachable);
   const scene = st.scene || "";
   const isAuto = !st.override;
-  const displayErr = err || browserStatus.error;
+  const displayErr = err;
   const scenesList = data?.scenes && data.scenes.length > 0 ? data.scenes : FALLBACK_SCENES;
 
   useEffect(() => {
@@ -383,150 +337,6 @@ export function RegiePanel({
           <div className="border-t border-line pt-3">
             <AudioStrip {...audio} />
           </div>
-        )}
-
-        {/* Sources locales (Source web & Partage d'écran) */}
-        {hasLocalSources && (
-        <div className="flex flex-col gap-2.5 border-t border-line pt-3">
-          <div className="flex items-center justify-between text-[0.76rem] font-semibold uppercase tracking-[0.1em] text-green">
-            <span>{t.regie.localSources}</span>
-            {browserStatus.loading && (
-              <span className="font-normal normal-case tracking-normal">{t.regie.browserLoading}</span>
-            )}
-          </div>
-
-          {/* Source web (Browser Source) */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <EyeBtn
-              visible={browserSource.visible}
-              label={`${browserSource.visible ? t.regie.hide : t.regie.show} — ${t.regie.browserSource}`}
-              disabled={!browserUrl.trim() && !browserSource.visible}
-              onClick={() =>
-                onBrowserSourceChange({
-                  ...browserSource,
-                  url: browserUrl,
-                  visible: !browserSource.visible,
-                })
-              }
-            />
-            <span className="min-w-[115px] text-[0.9rem] font-semibold text-ink">
-              {t.regie.browserSource}
-            </span>
-            <input
-              type="url"
-              value={browserUrl}
-              onChange={(e) => setBrowserUrl(e.target.value)}
-              placeholder={t.regie.browserUrl}
-              maxLength={2048}
-              className={`${inputCls} min-w-[190px] flex-1`}
-            />
-            <select
-              value={browserSource.mode}
-              onChange={(e) =>
-                onBrowserSourceChange({
-                  ...browserSource,
-                  url: browserUrl,
-                  mode: e.target.value as BrowserSourceMode,
-                })
-              }
-              aria-label={t.regie.browserSource}
-              className={inputCls}
-            >
-              {BROWSER_MODES.map((m) => (
-                <option key={m} value={m}>
-                  {t.regie.browserModes[m]}
-                </option>
-              ))}
-            </select>
-            {browserSource.mode === "overlay" && (
-              <>
-                <select
-                  value={browserSource.corner}
-                  onChange={(e) =>
-                    onBrowserSourceChange({
-                      ...browserSource,
-                      url: browserUrl,
-                      corner: e.target.value as BrowserSourceCorner,
-                    })
-                  }
-                  aria-label={t.regie.browserSource}
-                  className={inputCls}
-                >
-                  {CORNERS.map((c) => (
-                    <option key={c} value={c}>
-                      {t.regie.corners[c]}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={browserSource.size}
-                  onChange={(e) =>
-                    onBrowserSourceChange({
-                      ...browserSource,
-                      url: browserUrl,
-                      size: e.target.value as BrowserSourceSize,
-                    })
-                  }
-                  aria-label={t.regie.browserSource}
-                  className={inputCls}
-                >
-                  {BROWSER_SIZES.map((s) => (
-                    <option key={s} value={s}>
-                      {t.regie.browserSizes[s]}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-            <Btn
-              variante="ghost"
-              className={smallBtn}
-              disabled={!browserUrl.trim()}
-              onClick={() =>
-                onBrowserSourceChange({
-                  ...browserSource,
-                  url: browserUrl,
-                })
-              }
-            >
-              {t.regie.apply}
-            </Btn>
-            {browserSource.visible && (
-              <Btn variante="ghost" className={smallBtn} onClick={onBrowserSourceReload}>
-                {t.regie.browserReload}
-              </Btn>
-            )}
-          </div>
-
-          {/* Partage d'écran / fenêtre */}
-          <div className="flex flex-wrap items-center gap-1.5 border-t border-line pt-2.5">
-            <EyeBtn
-              visible={screenActive}
-              label={`${screenActive ? t.regie.hide : t.regie.show} — ${t.regie.screenShare}`}
-              disabled={!screenSourceId && !screenActive}
-              onClick={onScreenToggle}
-            />
-            <span className="min-w-[115px] text-[0.9rem] font-semibold text-ink">
-              {t.regie.screenShare}
-            </span>
-            <select
-              value={screenSourceId}
-              onChange={(e) => onScreenSelect(e.target.value)}
-              aria-label={t.regie.screenShare}
-              className={`${inputCls} min-w-[210px] flex-1`}
-            >
-              <option value="">{t.regie.screenNone}</option>
-              {desktopSources.map((src) => (
-                <option key={src.id} value={src.id}>
-                  {src.kind === "screen" ? t.regie.screenKindScreen : t.regie.screenKindWindow} — {src.name}
-                </option>
-              ))}
-            </select>
-            <Btn variante="ghost" className={smallBtn} onClick={onScreenRefresh}>
-              {t.regie.screenRefresh}
-            </Btn>
-          </div>
-        </div>
         )}
 
         {/* Incrustations serveur */}
