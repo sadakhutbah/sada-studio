@@ -3,7 +3,7 @@ import { appendFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { ensureMediaAccess, openMediaSettings } from "./media-access";
 import { SadaHttpApi } from "../core/api/sada-api";
-import type { OverlayKind, StreamMeta, TransitionMode } from "../core/api/types";
+import type { StreamMeta } from "../core/api/types";
 import { t } from "../core/messages";
 import { ApiError } from "../core/errors";
 import { KioskSupervisor, type ClientReport } from "../core/kiosk/supervisor";
@@ -13,6 +13,7 @@ import { FileAudioOffsetStore, FileCaptureSettingsStore } from "./capture-files"
 import { CaptureService } from "./capture-service";
 import { FilePersistStore, SafeDeviceStore } from "./device-store";
 import { resolveFfmpeg } from "./ffmpeg-io";
+import { isResourcePath, isTransition, parseOverlay, parseRegieCommand } from "./ipc-guards";
 import { log } from "./log";
 import { startUpdater } from "./updater";
 import { collectWindowsFacts } from "./windows-facts";
@@ -137,24 +138,41 @@ export function registerIpc(version: string): Kiosk {
   ipcMain.handle("kiosk:dismiss-conflict", () => supervisor.dismissConflict());
   ipcMain.on("kiosk:report", (_e, r: unknown) => isReport(r) && supervisor.setReport(r));
   ipcMain.handle("kiosk:windows-facts", () => collectWindowsFacts());
-  ipcMain.handle("studio:whip-offer", (_e, sdp: string) => run(() => api.whip.offer(sdp)));
-  ipcMain.handle("studio:whip-patch", (_e, resource: string, fragment: string) =>
-    run(async () => (await api.whip.patchIce(resource, fragment), null)),
+  const resourceOf = (r: unknown): string => {
+    if (!isResourcePath(r)) throw new ApiError(0, t("ipc.invalidResource"));
+    return r;
+  };
+  ipcMain.handle("studio:whip-offer", (_e, sdp: unknown) => run(() => api.whip.offer(String(sdp))));
+  ipcMain.handle("studio:whip-patch", (_e, resource: unknown, fragment: unknown) =>
+    run(async () => (await api.whip.patchIce(resourceOf(resource), String(fragment)), null)),
   );
-  ipcMain.handle("studio:whip-close", (_e, resource: string) => run(async () => (await api.whip.close(resource), null)));
+  ipcMain.handle("studio:whip-close", (_e, resource: unknown) => run(async () => (await api.whip.close(resourceOf(resource)), null)));
   ipcMain.handle("setup:enter", () => run(() => api.setup.enter()));
   ipcMain.handle("setup:leave", () => run(async () => (await api.setup.leave(), null)));
   ipcMain.handle("setup:whep-offer", (_e, sdp: string) => run(() => api.setup.whepOffer(String(sdp))));
-  ipcMain.handle("setup:whep-close", (_e, resource: string) => run(async () => (await api.setup.whepClose(String(resource)), null)));
+  ipcMain.handle("setup:whep-close", (_e, resource: unknown) => run(async () => (await api.setup.whepClose(resourceOf(resource)), null)));
   ipcMain.handle("regie:get", () => run(() => api.getRegie()));
   ipcMain.handle("regie:status", () => run(() => api.getLiveStatus()));
-  ipcMain.handle("regie:command", (_e, cmd: string, arg?: string, tr?: TransitionMode) =>
-    run(() => api.sendLiveCommand(cmd, arg, tr)),
+  ipcMain.handle("regie:command", (_e, cmd: unknown, arg: unknown, tr: unknown) =>
+    run(async () => {
+      const c = parseRegieCommand(cmd, arg, tr);
+      if (!c) throw new ApiError(0, t("ipc.invalidCommand"));
+      return api.sendLiveCommand(c.cmd, c.arg, c.transition);
+    }),
   );
-  ipcMain.handle("regie:set-transition", (_e, mode: TransitionMode) => run(() => api.setTransition(mode)));
+  ipcMain.handle("regie:set-transition", (_e, mode: unknown) =>
+    run(async () => {
+      if (!isTransition(mode)) throw new ApiError(0, t("ipc.invalidCommand"));
+      return api.setTransition(mode);
+    }),
+  );
   ipcMain.handle("regie:set-mute", (_e, muted: boolean) => run(() => api.setMute(Boolean(muted))));
-  ipcMain.handle("regie:set-overlay", (_e, kind: OverlayKind, payload: Record<string, unknown>) =>
-    run(() => api.setLiveOverlay(kind, payload)),
+  ipcMain.handle("regie:set-overlay", (_e, kind: unknown, payload: unknown) =>
+    run(async () => {
+      const o = parseOverlay(kind, payload);
+      if (!o) throw new ApiError(0, t("ipc.invalidOverlay"));
+      return api.setLiveOverlay(o.kind, o.payload);
+    }),
   );
   ipcMain.handle("regie:overlay-layer", (_e, etag: unknown) =>
     run(() => api.getOverlayLayer(typeof etag === "string" && etag.length <= 200 ? etag : null)),

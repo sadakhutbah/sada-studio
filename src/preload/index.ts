@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { CaptureView } from "../core/capture/settings";
+import type { BrowserSourceFrame, BrowserSourceStatus } from "../core/sources/types";
 import type { CaptureMedia, KioskSnapshot, StudioBridge } from "../shared/ipc";
 
 const bridge: StudioBridge = {
@@ -21,6 +22,32 @@ const bridge: StudioBridge = {
     devices: () => ipcRenderer.invoke("capture:devices"),
     setDelay: (ms) => ipcRenderer.invoke("capture:set-delay", ms),
     calibrate: () => ipcRenderer.invoke("capture:calibrate"),
+  },
+  sources: {
+    browser: {
+      status: () => ipcRenderer.invoke("sources:browser-status"),
+      onStatus: (cb) => {
+        const listener = (_e: unknown, v: BrowserSourceStatus) => cb(v);
+        ipcRenderer.on("sources:browser-status-changed", listener);
+        return () => void ipcRenderer.removeListener("sources:browser-status-changed", listener);
+      },
+      onFrame: (cb) => {
+        const listener = (_e: unknown, f: BrowserSourceFrame) => cb(f);
+        ipcRenderer.on("sources:browser-frame", listener);
+        return () => void ipcRenderer.removeListener("sources:browser-frame", listener);
+      },
+      ackFrame: () => ipcRenderer.send("sources:browser-frame-ack"),
+      start: (url) => ipcRenderer.invoke("sources:browser-start", url),
+      reload: () => ipcRenderer.invoke("sources:browser-reload"),
+      setVisible: (visible) => ipcRenderer.invoke("sources:browser-set-visible", visible),
+      stop: () => ipcRenderer.invoke("sources:browser-stop"),
+    },
+    screen: {
+      access: () => ipcRenderer.invoke("sources:screen-access"),
+      list: () => ipcRenderer.invoke("sources:screen-list"),
+      select: (sourceId) => ipcRenderer.invoke("sources:screen-select", sourceId),
+      openSettings: () => ipcRenderer.invoke("sources:screen-open-settings"),
+    },
   },
   media: {
     access: () => ipcRenderer.invoke("media:access"),

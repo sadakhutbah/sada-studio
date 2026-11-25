@@ -86,6 +86,18 @@ export class WhipTransport implements Transport {
     return out;
   }
 
+  /** Same connection, other media: each sender takes the new stream's track of its kind (WebRTC `replaceTrack`). */
+  async replaceTracks(stream: MediaStream): Promise<void> {
+    const pc = this.pc;
+    if (!pc || this.closing) return;
+    for (const sender of pc.getSenders()) {
+      const kind = sender.track?.kind;
+      if (!kind) continue;
+      const next = (kind === "video" ? stream.getVideoTracks() : stream.getAudioTracks())[0];
+      if (next && next !== sender.track) await sender.replaceTrack(next);
+    }
+  }
+
   async close(): Promise<void> {
     if (this.closing) return;
     this.closing = true;

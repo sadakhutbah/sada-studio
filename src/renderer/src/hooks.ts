@@ -11,6 +11,7 @@ import { ApiError } from "@core/errors";
 import { IDLE_LIMIT_MS, isIdle, renewDelayMs, setupPhase, type SetupPhase } from "@core/setup/view";
 import { LAYER_POLL_MS, LAYER_RETRY_MS, layerMode, type LayerMode } from "@core/setup/overlay-layer";
 import type { KioskSnapshot } from "@shared/ipc";
+import { Poller } from "@core/regie/poller";
 import { bridge } from "./bridge";
 import { createBroadcast } from "./studio";
 
@@ -46,7 +47,7 @@ export function useBroadcast() {
   const broadcast = useMemo(() => createBroadcast(), []);
   const [snapshot, setSnapshot] = useState<SessionSnapshot>(broadcast.session.snapshot);
   useEffect(() => broadcast.session.subscribe(setSnapshot), [broadcast]);
-  useEffect(() => () => broadcast.source.release(), [broadcast]);
+  useEffect(() => () => broadcast.composited.release(), [broadcast]);
   return { ...broadcast, snapshot };
 }
 
@@ -311,38 +312,43 @@ export interface OverlayLayer {
 
 /**
  * The overlay layer the server draws (see `@core/setup/overlay-layer`): fetched while `active`, revalidated by ETag
- * every few seconds and at once when `stateKey` (the overlay state known locally, the setup flag) changes.
+ * every few seconds (not while the window is hidden) and at once when `stateKey` (the overlay state known locally) changes.
+ * `scope` says which programme is drawn (live or rehearsal): when it changes the ETag and the picture are dropped, since
+ * an ETag of the other programme must never validate this one.
  */
-export function useOverlayLayer(active: boolean, stateKey: string): OverlayLayer {
-  const [src, setSrc] = useState<string | null>(null);
+export function useOverlayLayer(active: boolean, stateKey: string, scope: string): OverlayLayer {
+  const [held, setHeld] = useState<{ scope: string; src: string } | null>(null);
   const [failures, setFailures] = useState(0);
-  const etag = useRef<string | null>(null);
-  const failed = useRef(0);
+  const etag = useRef<{ scope: string; value: string | null }>({ scope, value: null });
   useEffect(() => {
     if (!active) return;
+    if (etag.current.scope !== scope) etag.current = { scope, value: null };
     let stop = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const tick = async () => {
-      try {
-        const r = await bridge.regie.overlayLayer(etag.current);
+    const poller = new Poller({
+      run: async () => {
+        const r = await bridge.regie.overlayLayer(etag.current.value);
         if (stop) return;
         if (r.changed) {
-          etag.current = r.etag || null;
-          setSrc(pngDataUrl(r.png));
+          etag.current = { scope, value: r.etag || null };
+          setHeld({ scope, src: pngDataUrl(r.png) });
         }
-        failed.current = 0;
-      } catch {
-        if (stop) return;
-        failed.current += 1;
-      }
-      setFailures(failed.current);
-      timer = setTimeout(() => void tick(), failed.current ? LAYER_RETRY_MS : LAYER_POLL_MS);
+        setFailures(0);
+      },
+      delayMs: (n) => (n ? LAYER_RETRY_MS : LAYER_POLL_MS),
+      isHidden: () => document.hidden,
+      onFailures: (n) => !stop && setFailures(n),
+    });
+    const onVisibility = () => {
+      if (!document.hidden) poller.wake();
     };
-    void tick();
+    document.addEventListener("visibilitychange", onVisibility);
+    poller.start();
     return () => {
       stop = true;
-      clearTimeout(timer);
+      poller.stop();
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [active, stateKey]);
-  return { src: active ? src : null, mode: active ? layerMode(src !== null, failures) : "pending" };
+  }, [active, stateKey, scope]);
+  const src = active && held?.scope === scope ? held.src : null;
+  return { src, mode: active ? layerMode(src !== null, failures) : "pending" };
 }

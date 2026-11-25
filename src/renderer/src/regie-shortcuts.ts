@@ -30,11 +30,8 @@ export function resolveRegieShortcut(ev: ShortcutKeyLike, sceneCount: number): R
     return index >= 0 && index < sceneCount ? { type: "stage", index } : null;
   }
   if (ev.key === "Enter") {
-    const interactive = ev.target?.closest?.("button, a");
-    if (interactive && !interactive.hasAttribute("data-regie-scene")) {
-      return null;
-    }
-    return { type: "take" };
+    // Only with the focus on a scene button: an Enter pressed anywhere else (body, another control) never goes on air.
+    return ev.target?.closest?.("button[data-regie-scene]") ? { type: "take" } : null;
   }
   return null;
 }

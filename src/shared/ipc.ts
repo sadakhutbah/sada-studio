@@ -12,6 +12,7 @@ import type { CalibrationView, CaptureSettings, CaptureView } from "../core/capt
 import type { WindowsFacts } from "../core/health/health";
 import type { ClientReport, KioskView } from "../core/kiosk/supervisor";
 import type { UpdateStatus } from "../core/kiosk/update-gate";
+import type { BrowserSourceFrame, BrowserSourceStatus, DesktopSourceInfo, ScreenAccess } from "../core/sources/types";
 
 /** Serializable result of an IPC call: errors keep their HTTP code (0 = network). */
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; status: number; message: string; code?: string };
@@ -64,9 +65,37 @@ export type ProjectorSignal =
   | { kind: "offer" | "answer"; sdp: string }
   | { kind: "ice"; candidate: RTCIceCandidateInit };
 
+/** Local sources driven by the main process: a hidden web page and the screens / windows of the computer. */
+export interface SourcesBridge {
+  browser: {
+    status(): Promise<BrowserSourceStatus>;
+    onStatus(cb: (s: BrowserSourceStatus) => void): () => void;
+    /** Painted frames (raw BGRA, bounded size, rate-limited); call `ackFrame` once one is consumed to get the next. */
+    onFrame(cb: (f: BrowserSourceFrame) => void): () => void;
+    ackFrame(): void;
+    /** Adds the source: opens the hidden window on a public http(s) address. */
+    start(url: string): Promise<IpcResult<BrowserSourceStatus>>;
+    reload(): Promise<IpcResult<BrowserSourceStatus>>;
+    /** Shown or hidden: a hidden page stops painting. */
+    setVisible(visible: boolean): Promise<IpcResult<BrowserSourceStatus>>;
+    /** Removes the source: closes the window and drops what the page stored. */
+    stop(): Promise<IpcResult<BrowserSourceStatus>>;
+  };
+  screen: {
+    /** macOS screen-recording permission (always `granted` elsewhere). */
+    access(): Promise<ScreenAccess>;
+    /** Screens and windows with a thumbnail; fails with code `screen_denied` when macOS refuses the recording. */
+    list(): Promise<IpcResult<DesktopSourceInfo[]>>;
+    /** The source the next screen capture will serve (null: none). */
+    select(sourceId: string | null): Promise<IpcResult<null>>;
+    openSettings(): Promise<void>;
+  };
+}
+
 /** What the main process exposes to the UI (`window.studio`). */
 export interface StudioBridge {
   capture: CaptureBridge;
+  sources: SourcesBridge;
   media: {
     /** Asks once (macOS), then only reads the status: safe to call repeatedly. */
     access(): Promise<MediaAccess>;
@@ -97,7 +126,7 @@ export interface StudioBridge {
   whipOffer(sdp: string): Promise<IpcResult<{ answer: string; resource: string }>>;
   whipPatch(resource: string, fragment: string): Promise<IpcResult<null>>;
   whipClose(resource: string): Promise<IpcResult<null>>;
-  /** Setup mode: the programme as the orchestrator composes it, before any live (see docs/studio-devices.md). */
+  /** Setup mode: the programme as the orchestrator composes it, before any live (contract: `docs/studio-devices.md` of the sada repository). */
   setup: {
     enter(): Promise<IpcResult<SetupState>>;
     leave(): Promise<IpcResult<null>>;

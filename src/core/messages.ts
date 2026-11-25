@@ -43,6 +43,9 @@ const fr = {
   "sup.heartbeatsMissed": "Le serveur Sada n'a pas répondu à {n} battements de suite.",
   "sup.noLongerAuthorized": "{message} Cet appareil n'est plus autorisé : appairez-le de nouveau depuis la console Sada, rubrique Appareils.",
   "ipc.invalidLive": "Type ou titre invalide.",
+  "ipc.invalidResource": "Ressource de diffusion invalide.",
+  "ipc.invalidCommand": "Commande de régie invalide.",
+  "ipc.invalidOverlay": "Incrustation invalide.",
   // Setup mode (programme view)
   "setup.kicker": "Mode réglage",
   "setup.title": "Voir ce qui sera diffusé",
@@ -78,10 +81,25 @@ const fr = {
   "quit.title": "Quitter {app}",
   "quit.live": "Un direct est en cours. Quitter l'arrêtera.",
   "quit.idle": "Quitter Sada Studio ?",
-  "quit.detail": "Une fois fermée, l'application ne diffusera plus les directs planifiés, jusqu'au prochain démarrage de Windows ou de l'application.",
+  "quit.detail": "Une fois fermée, l'application ne diffusera plus les directs planifiés, jusqu'au prochain démarrage {os} ou de l'application.",
+  "quit.os.win32": "de Windows",
+  "quit.os.darwin": "de macOS",
+  "quit.os.other": "de l'ordinateur",
   "quit.stay": "Rester",
   "tray.open": "Ouvrir Sada Studio",
   "quit.quit": "Quitter",
+  // Local sources (web source, screen share)
+  "browser.urlEmpty": "Veuillez saisir une URL pour la source web.",
+  "browser.urlTooLong": "L'URL de la source web est trop longue.",
+  "browser.urlInvalid": "URL invalide pour la source web.",
+  "browser.urlScheme": "Seules les URL http:// et https:// sont autorisées.",
+  "browser.urlPrivate": "Cette adresse pointe vers cet ordinateur ou un réseau privé : elle n'est pas autorisée pour une source web.",
+  "browser.loadFailed": "La page n'a pas pu être chargée ({detail}).",
+  "screen.noSource": "Aucune source d'écran ou de fenêtre sélectionnée.",
+  "screen.gone": "La source d'écran ou de fenêtre sélectionnée n'existe plus : choisissez-en une autre.",
+  "screen.denied": "Sada Studio n'a pas l'autorisation d'enregistrer l'écran : autorisez-la dans Réglages Système, Confidentialité et sécurité, Enregistrement de l'écran, puis relancez l'application.",
+  "screen.failed": "Le partage d'écran a échoué.",
+  "ipc.invalidSource": "Source invalide.",
   // Health checks
   "health.na": "Sans objet sur ce système.",
   "health.unreadable": "Réglage illisible.",
@@ -177,6 +195,9 @@ const en: Record<MessageKey, string> = {
   "sup.heartbeatsMissed": "The Sada server did not answer {n} heartbeats in a row.",
   "sup.noLongerAuthorized": "{message} This device is no longer authorized: pair it again from the Sada console, under Devices.",
   "ipc.invalidLive": "Invalid type or title.",
+  "ipc.invalidResource": "Invalid broadcast resource.",
+  "ipc.invalidCommand": "Invalid Régie command.",
+  "ipc.invalidOverlay": "Invalid overlay.",
   // Setup mode (programme view)
   "setup.kicker": "Setup mode",
   "setup.title": "See what will be broadcast",
@@ -209,10 +230,25 @@ const en: Record<MessageKey, string> = {
   "quit.title": "Quit {app}",
   "quit.live": "A live is running. Quitting will stop it.",
   "quit.idle": "Quit Sada Studio?",
-  "quit.detail": "Once closed, the application will no longer broadcast scheduled lives until Windows or the application starts again.",
+  "quit.detail": "Once closed, the application will no longer broadcast scheduled lives until {os} or the application starts again.",
+  "quit.os.win32": "Windows",
+  "quit.os.darwin": "macOS",
+  "quit.os.other": "the computer",
   "quit.stay": "Stay",
   "tray.open": "Open Sada Studio",
   "quit.quit": "Quit",
+  // Local sources (web source, screen share)
+  "browser.urlEmpty": "Enter a URL for the web source.",
+  "browser.urlTooLong": "The web source URL is too long.",
+  "browser.urlInvalid": "Invalid URL for the web source.",
+  "browser.urlScheme": "Only http:// and https:// URLs are allowed.",
+  "browser.urlPrivate": "This address points to this computer or to a private network: it is not allowed for a web source.",
+  "browser.loadFailed": "The page could not be loaded ({detail}).",
+  "screen.noSource": "No screen or window selected.",
+  "screen.gone": "The selected screen or window no longer exists: choose another one.",
+  "screen.denied": "Sada Studio is not allowed to record the screen: allow it in System Settings, Privacy & Security, Screen Recording, then restart the application.",
+  "screen.failed": "Screen sharing failed.",
+  "ipc.invalidSource": "Invalid source.",
   "health.na": "Not applicable on this system.",
   "health.unreadable": "Setting unreadable.",
   "health.camera.title": "Camera",
@@ -292,4 +328,9 @@ export function intlLocale(): string {
 /** Looks a message up in the current locale and fills its `{placeholders}`. */
 export function t(key: MessageKey, vars: Record<string, string | number> = {}): string {
   return catalogs[current][key].replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));
+}
+
+/** Name of the system in the quit dialog: Windows and macOS by name, anything else (Linux) neutral. */
+export function quitSystemLabel(platform: string): string {
+  return t(platform === "win32" ? "quit.os.win32" : platform === "darwin" ? "quit.os.darwin" : "quit.os.other");
 }

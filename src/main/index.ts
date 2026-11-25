@@ -2,8 +2,9 @@ import { app, BrowserWindow, dialog, Menu, nativeImage, session, shell, Tray } f
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { backoffDelay } from "../core/kiosk/backoff";
-import { t } from "../core/messages";
+import { quitSystemLabel, t } from "../core/messages";
 import { registerProjector } from "./projector";
+import { registerSources } from "./sources";
 import { registerIpc, type Kiosk } from "./ipc";
 import { log } from "./log";
 
@@ -47,6 +48,7 @@ const dev = !app.isPackaged;
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let kiosk: Kiosk | null = null;
+let sources: { dispose(): void } | null = null;
 let quitting = false;
 
 const iconPath = () => (app.isPackaged ? join(process.resourcesPath, "icon.png") : join(app.getAppPath(), "build/icon.png"));
@@ -139,7 +141,7 @@ async function requestQuit() {
     type: "warning",
     title: t("quit.title", { app: APP_NAME }),
     message: live ? t("quit.live") : t("quit.idle"),
-    detail: t("quit.detail"),
+    detail: t("quit.detail", { os: quitSystemLabel(process.platform) }),
     buttons: [t("quit.stay"), t("quit.quit")],
     defaultId: 0,
     cancelId: 0,
@@ -178,19 +180,26 @@ function createTray() {
 
 function lockDownPermissions() {
   const ses = session.defaultSession;
-  // Camera and microphone only, and only for the UI itself.
-  ses.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === "media"));
-  ses.setPermissionCheckHandler((_wc, permission) => permission === "media");
+  // Camera, microphone and screen capture only, and only for the UI itself. The web source runs in its own
+  // session (partition "browser-source", see browser-source.ts) which grants nothing.
+  const allowed = (permission: string) => permission === "media" || permission === "display-capture";
+  ses.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed(permission)));
+  ses.setPermissionCheckHandler((_wc, permission) => allowed(permission));
   if (!devUrl) {
+    // The CSP is the application's own: it applies to its pages (file://), never to an external page.
     ses.webRequest.onHeadersReceived((details, cb) =>
-      cb({
-        responseHeaders: {
-          ...details.responseHeaders,
-          "Content-Security-Policy": [
-            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; connect-src 'self'",
-          ],
-        },
-      }),
+      cb(
+        details.url.startsWith("file://")
+          ? {
+              responseHeaders: {
+                ...details.responseHeaders,
+                "Content-Security-Policy": [
+                  "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; connect-src 'self'",
+                ],
+              },
+            }
+          : {},
+      ),
     );
   }
 }
@@ -218,6 +227,7 @@ app.on("before-quit", () => {
   quitting = true;
   // ffmpeg must not outlive the application.
   void kiosk?.capture.dispose();
+  sources?.dispose();
 });
 // Windows shutdown or sign-out: never block it.
 app.on("session-end" as never, () => {
@@ -234,6 +244,7 @@ void app.whenReady().then(() => {
   }
   kiosk = registerIpc(app.getVersion());
   registerProjector(devUrl, () => win);
+  sources = registerSources(() => win);
   createAppMenu();
   createTray();
   win = createWindow();

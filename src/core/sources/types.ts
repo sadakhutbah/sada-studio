@@ -31,15 +31,22 @@ export interface BrowserSourceConfig extends BrowserSourceLayout {
   visible: boolean;
 }
 
+/** One painted frame of the web source: raw premultiplied BGRA pixels (no image encoding on the main process). */
 export interface BrowserSourceFrame {
   width: number;
   height: number;
-  png: Uint8Array;
+  bgra: Uint8Array;
 }
 
+/** Screen-recording permission as the main process reads it (always `granted` outside macOS). */
+export type ScreenAccess = "granted" | "denied" | "not-determined" | "restricted" | "unknown";
+
 export interface BrowserSourceStatus {
+  /** The hidden window exists (the source is added). */
   active: boolean;
   loading: boolean;
+  /** Whether frames are being produced (the source is shown in the programme). */
+  visible: boolean;
   url: string;
   error: string | null;
 }
@@ -73,6 +80,8 @@ export interface MediaSourceStrategy {
   onEnded(cb: () => void): () => void;
   /** Synchronization controls, for the sources whose delay is applied by the renderer (webcam). */
   readonly sync?: SourceSync;
+  /** The stream to send changed while the source stays acquired (raw <-> composited): swap the senders' tracks. */
+  onStreamChange?(cb: (s: MediaStream) => void): () => void;
 }
 
 export interface SourceSync {

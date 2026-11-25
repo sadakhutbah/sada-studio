@@ -48,6 +48,7 @@ export class BroadcastSession {
   private readonly bitrate = new BitrateEstimator();
   private stats: LiveStats = { bitrateKbps: 0 };
   private offEnded: (() => void) | null = null;
+  private offStreamChange: (() => void) | null = null;
   /** Incremented on each start/stop: a late response from a past generation is ignored. */
   private generation = 0;
 
@@ -77,6 +78,8 @@ export class BroadcastSession {
       this.stream = stream;
       this.offEnded?.();
       this.offEnded = this.deps.source.onEnded(() => this.fail(t("session.deviceLost")));
+      this.offStreamChange?.();
+      this.offStreamChange = this.deps.source.onStreamChange?.((s) => void this.applyStream(s)) ?? null;
       await this.openTransport(stream);
       if (gen !== this.generation) return;
       this.machine.send({ type: "CONNECTED", at: this.now() });
@@ -99,6 +102,24 @@ export class BroadcastSession {
     this.machine.send({ type: "STOP" });
     await this.teardown();
     this.machine.send({ type: "STOPPED" });
+  }
+
+  /**
+   * Changes what is broadcast while live (shared screen on or off, web source shown or hidden): the source is acquired
+   * again with the new options and its tracks replace the senders' tracks. The WHIP connection is never closed.
+   */
+  async swapSource(source: SourceOptions): Promise<void> {
+    if (!this.stream || (this.machine.state.status !== "live" && this.machine.state.status !== "reconnecting")) return;
+    const gen = this.generation;
+    const stream = await this.deps.source.acquire(source);
+    if (gen !== this.generation) return;
+    await this.applyStream(stream);
+  }
+
+  private async applyStream(stream: MediaStream): Promise<void> {
+    if (!this.stream) return;
+    this.stream = stream; // a reconnection then starts from the current media
+    await this.transport?.replaceTracks?.(stream).catch(() => undefined);
   }
 
   private async openTransport(stream: MediaStream): Promise<void> {
@@ -181,6 +202,8 @@ export class BroadcastSession {
     this.stopStats();
     this.offEnded?.();
     this.offEnded = null;
+    this.offStreamChange?.();
+    this.offStreamChange = null;
     const t = this.transport;
     this.transport = null;
     await t?.close().catch(() => undefined);

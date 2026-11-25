@@ -1,4 +1,5 @@
 import { shell, systemPreferences } from "electron";
+import type { ScreenAccess } from "../core/sources/types";
 import type { MediaAccess } from "../shared/ipc";
 
 type Kind = "camera" | "microphone";
@@ -29,9 +30,15 @@ export function ensureMediaAccess(): Promise<MediaAccess> {
   return pending;
 }
 
+/** macOS screen-recording permission (read-only, never prompts); always granted elsewhere. */
+export function screenAccessStatus(): ScreenAccess {
+  if (process.platform !== "darwin") return "granted";
+  return systemPreferences.getMediaAccessStatus("screen");
+}
+
 /** Opens the matching pane of System Settings (macOS only). */
-export async function openMediaSettings(kind: Kind): Promise<void> {
+export async function openMediaSettings(kind: Kind | "screen"): Promise<void> {
   if (process.platform !== "darwin") return;
-  const pane = kind === "camera" ? "Privacy_Camera" : "Privacy_Microphone";
+  const pane = kind === "camera" ? "Privacy_Camera" : kind === "screen" ? "Privacy_ScreenCapture" : "Privacy_Microphone";
   await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${pane}`);
 }
