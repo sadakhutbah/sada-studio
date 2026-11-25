@@ -18,6 +18,8 @@ import { t } from "@core/messages";
 import { Brand, Btn, Card, ErrorBox, Field, inputClass, Kicker, StatusPill, Title, type PillKey } from "../ui";
 import { bridge } from "../bridge";
 import { RegiePanel } from "../components/RegiePanel";
+import { RegiePreviewLayer } from "../components/RegiePreviewLayer";
+import type { RegieLiveView } from "../regie-preview";
 import { HealthPanel } from "./HealthPanel";
 import { ProjectorPanel } from "./ProjectorPanel";
 import { SettingsPanel } from "./SettingsPanel";
@@ -49,6 +51,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   };
   const now = useNow(true);
   const video = useRef<HTMLVideoElement>(null);
+  const [regieView, setRegieView] = useState<RegieLiveView | null>(null);
   const [confirmStop, setConfirmStop] = useState(false);
   const [confirmUnpair, setConfirmUnpair] = useState(false);
   const [manualError, setManualError] = useState("");
@@ -223,6 +226,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
           <Card className="p-0!">
             <div className={`relative aspect-video overflow-hidden rounded-t-[10px] bg-night ${onAir ? "max-h-[calc(100vh-17rem)] min-h-64 w-full" : ""}`}>
               <video ref={video} autoPlay muted playsInline className="size-full object-contain" />
+              <RegiePreviewLayer view={regieView} />
               {!stream && (
                 <div className="absolute inset-0 grid place-content-center gap-3 px-6 text-center text-night-muted">
                   <p className="m-0">{captureError ? `${captureError} ${fr.preview.retry}` : fr.preview.empty}</p>
@@ -302,7 +306,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
               </div>
             )}
           </Card>
-          <RegiePanel audio={{ level, muted, onToggleMute: toggleMute }} />
+          <RegiePanel onLiveChange={setRegieView} audio={{ level, muted, onToggleMute: toggleMute }} />
           <ProjectorPanel stream={stream} onAir={onAir} prefs={prefs} setPrefs={update} />
           {kiosk.stopPending && <p className="m-0 text-[0.85rem] text-muted">{fr.stop.pending}</p>}
           {state.status === "error" && state.error && state.errorCode !== "conflict" && <ErrorBox>{state.error}</ErrorBox>}

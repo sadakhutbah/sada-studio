@@ -176,6 +176,7 @@ export const fr = {
     bannerTitle: "Titre",
     bannerSubtitle: "Sous-titre",
     logo: "Logo de la mosquée",
+    logoShort: "Logo",
     corners: { tl: "Haut gauche", tr: "Haut droite", bl: "Bas gauche", br: "Bas droite" },
     show: "Afficher",
     hide: "Masquer",
