@@ -156,6 +156,9 @@ export function registerIpc(version: string): Kiosk {
   ipcMain.handle("regie:set-overlay", (_e, kind: OverlayKind, payload: Record<string, unknown>) =>
     run(() => api.setLiveOverlay(kind, payload)),
   );
+  ipcMain.handle("regie:overlay-layer", (_e, etag: unknown) =>
+    run(() => api.getOverlayLayer(typeof etag === "string" && etag.length <= 200 ? etag : null)),
+  );
 
   supervisor.boot();
   return { supervisor, capture, snapshot };

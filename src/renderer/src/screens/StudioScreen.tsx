@@ -11,7 +11,7 @@ import { formatBitrate, formatDuration } from "@core/stats";
 import type { KioskSnapshot } from "@shared/ipc";
 import type { CalibrationView, CaptureSettings } from "@core/capture/settings";
 import { normalizeDelay } from "@core/capture/types";
-import { useBroadcast, useCapture, useDevices, useHealth, useKeeper, useLevel, useNow, useReporter, useSetupMode } from "../hooks";
+import { useBroadcast, useCapture, useDevices, useHealth, useKeeper, useLevel, useNow, useOverlayLayer, useReporter, useSetupMode } from "../hooks";
 import { loadPrefs, savePrefs, webcamDelayOf, webcamPairKey, type Prefs } from "../prefs";
 import { fill, fr } from "../strings";
 import { t } from "@core/messages";
@@ -21,6 +21,7 @@ import { RegiePanel } from "../components/RegiePanel";
 import { RegiePreviewLayer } from "../components/RegiePreviewLayer";
 import { SetupProgramView } from "../components/SetupProgramView";
 import { IDLE_LIMIT_MS } from "@core/setup/view";
+import { overlaysKey } from "@core/setup/overlay-layer";
 import type { RegieLiveView } from "../regie-preview";
 import { HealthPanel } from "./HealthPanel";
 import { ProjectorPanel } from "./ProjectorPanel";
@@ -61,6 +62,8 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Setup mode: the orchestrator's real programme next to the local monitor (see components/SetupProgramView).
   const setup = useSetupMode();
+  // The server's own overlay layer over the local monitor; refetched at once on any overlay change.
+  const overlayLayer = useOverlayLayer(regieView !== null, `${setup.wanted ? "setup" : "live"}|${overlaysKey(regieView?.overlays)}`);
 
   const update = (patch: Partial<Prefs>) =>
     setPrefs((p) => {
@@ -235,7 +238,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
                   <p className="m-0 px-4.5 py-2 text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-green">{t("setup.local")}</p>
             <div className={`relative aspect-video overflow-hidden rounded-t-[10px] bg-night ${onAir ? "max-h-[calc(100vh-17rem)] min-h-64 w-full" : ""}`}>
               <video ref={video} autoPlay muted playsInline className="size-full object-contain" />
-              {!setup.wanted && <RegiePreviewLayer view={regieView} />}
+              <RegiePreviewLayer view={regieView} layer={overlayLayer} />
               {!stream && (
                 <div className="absolute inset-0 grid place-content-center gap-3 px-6 text-center text-night-muted">
                   <p className="m-0">{captureError ? `${captureError} ${fr.preview.retry}` : fr.preview.empty}</p>
@@ -262,7 +265,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
             ) : (
             <div className={`relative aspect-video overflow-hidden rounded-t-[10px] bg-night ${onAir ? "max-h-[calc(100vh-17rem)] min-h-64 w-full" : ""}`}>
               <video ref={video} autoPlay muted playsInline className="size-full object-contain" />
-              {!setup.wanted && <RegiePreviewLayer view={regieView} />}
+              <RegiePreviewLayer view={regieView} layer={overlayLayer} />
               {!stream && (
                 <div className="absolute inset-0 grid place-content-center gap-3 px-6 text-center text-night-muted">
                   <p className="m-0">{captureError ? `${captureError} ${fr.preview.retry}` : fr.preview.empty}</p>

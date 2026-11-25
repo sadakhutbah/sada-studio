@@ -9,6 +9,7 @@ import type {
   HeartbeatReport,
   LiveStatus,
   OverlayKind,
+  OverlayLayerFetch,
   OverlayUpdateResponse,
   PairingApi,
   PairingChallenge,
@@ -181,6 +182,21 @@ export class SadaHttpApi implements StudioApi {
       json: this.mark(payload),
       device: true,
     });
+  }
+
+  /**
+   * The overlay layer the engine draws for the live (or the rehearsal, setup view open), revalidated by ETag:
+   * the server answers 304 while nothing changed, so polling it costs nothing.
+   */
+  async getOverlayLayer(etag: string | null): Promise<OverlayLayerFetch> {
+    const headers: Record<string, string> = { Accept: "image/png" };
+    if (etag) headers["If-None-Match"] = etag;
+    const res = await this.raw("GET", `${API}/live/regie/overlays.png${this.setupMode ? "?setup=1" : ""}`, { headers, device: true });
+    if (res.status === 304) return { changed: false };
+    if (!res.ok) await this.check(res);
+    const type = res.headers.get("content-type") ?? "";
+    if (res.status !== 200 || !type.startsWith("image/png")) throw new ApiError(res.status, t("api.httpError", { status: res.status }));
+    return { changed: true, etag: res.headers.get("etag") ?? "", png: new Uint8Array(await res.arrayBuffer()) };
   }
 
   /**

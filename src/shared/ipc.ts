@@ -1,6 +1,7 @@
 import type {
   LiveStatus,
   OverlayKind,
+  OverlayLayerFetch,
   OverlayUpdateResponse,
   RegieData,
   SetupState,
@@ -110,6 +111,8 @@ export interface StudioBridge {
     setTransition(mode: TransitionMode): Promise<IpcResult<{ ok: boolean; transition: TransitionMode }>>;
     setMute(muted: boolean): Promise<IpcResult<{ ok: boolean; muted: boolean; mic_muted: boolean }>>;
     setOverlay(kind: OverlayKind, payload: Record<string, unknown>): Promise<IpcResult<OverlayUpdateResponse>>;
+    /** The server-drawn overlay layer; `etag`: the copy already held (answered `changed: false` if current). */
+    overlayLayer(etag: string | null): Promise<IpcResult<OverlayLayerFetch>>;
   };
 }
 

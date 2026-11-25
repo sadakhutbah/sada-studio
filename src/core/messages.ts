@@ -65,6 +65,7 @@ const fr = {
   "setup.phase.starting": "Orchestrateur prêt : le programme démarre…",
   "setup.idleClosed": "Mode réglage fermé après {min} minutes d'inactivité : l'orchestrateur peut se rendormir.",
   "setup.lapsed": "Le mode réglage a expiré : il se rouvre.",
+  "overlayLayer.fallback": "Incrustations approximatives : le serveur Sada ne répond pas.",
   // Update gate
   "update.liveRunning": "Un direct est en cours : la mise à jour attend la fin.",
   "update.slotRunning": "Un créneau est en cours : la mise à jour attend la fin.",
@@ -198,6 +199,7 @@ const en: Record<MessageKey, string> = {
   "setup.phase.starting": "Orchestrator ready: the programme is starting…",
   "setup.idleClosed": "Setup mode closed after {min} minutes of inactivity: the orchestrator may go back to sleep.",
   "setup.lapsed": "Setup mode had expired: it is reopening.",
+  "overlayLayer.fallback": "Approximate overlays: the Sada server is not answering.",
   "update.liveRunning": "A live is running: the update waits for it to end.",
   "update.slotRunning": "A slot is running: the update waits for it to end.",
   "update.liveNear": "A live is about to start: the update waits for the end of the slot.",

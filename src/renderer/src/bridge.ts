@@ -36,5 +36,6 @@ export const bridge = {
     setMute: async (muted: boolean) => unwrap(await window.studio.regie.setMute(muted)),
     setOverlay: async (kind: OverlayKind, payload: Record<string, unknown>) =>
       unwrap(await window.studio.regie.setOverlay(kind, payload)),
+    overlayLayer: async (etag: string | null) => unwrap(await window.studio.regie.overlayLayer(etag)),
   },
 };

@@ -108,6 +108,12 @@ export interface LiveOverlays {
   logo: { visible: boolean };
 }
 
+/**
+ * The overlay layer drawn by the server (logo, banner, QR, exactly as the engine composites them over the camera):
+ * a transparent 1280×720 PNG identified by its ETag. `changed: false`: the copy the client holds is still current.
+ */
+export type OverlayLayerFetch = { changed: false } | { changed: true; etag: string; png: Uint8Array };
+
 export interface LiveStatus {
   reachable?: boolean;
   ok?: boolean;
