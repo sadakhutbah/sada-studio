@@ -1,11 +1,20 @@
-import type { LiveStatus, OverlayKind, OverlayUpdateResponse, RegieData, StreamMeta, TransitionMode } from "../core/api/types";
+import type {
+  LiveStatus,
+  OverlayKind,
+  OverlayLayerFetch,
+  OverlayUpdateResponse,
+  RegieData,
+  SetupState,
+  StreamMeta,
+  TransitionMode,
+} from "../core/api/types";
 import type { CalibrationView, CaptureSettings, CaptureView } from "../core/capture/settings";
 import type { WindowsFacts } from "../core/health/health";
 import type { ClientReport, KioskView } from "../core/kiosk/supervisor";
 import type { UpdateStatus } from "../core/kiosk/update-gate";
 
 /** Serializable result of an IPC call: errors keep their HTTP code (0 = network). */
-export type IpcResult<T> = { ok: true; value: T } | { ok: false; status: number; message: string };
+export type IpcResult<T> = { ok: true; value: T } | { ok: false; status: number; message: string; code?: string };
 
 /** The device state as the UI sees it: never the device secret. */
 export type KioskSnapshot = KioskView & { update: UpdateStatus | null };
@@ -88,6 +97,13 @@ export interface StudioBridge {
   whipOffer(sdp: string): Promise<IpcResult<{ answer: string; resource: string }>>;
   whipPatch(resource: string, fragment: string): Promise<IpcResult<null>>;
   whipClose(resource: string): Promise<IpcResult<null>>;
+  /** Setup mode: the programme as the orchestrator composes it, before any live (see docs/studio-devices.md). */
+  setup: {
+    enter(): Promise<IpcResult<SetupState>>;
+    leave(): Promise<IpcResult<null>>;
+    whepOffer(sdp: string): Promise<IpcResult<{ answer: string; resource: string }>>;
+    whepClose(resource: string): Promise<IpcResult<null>>;
+  };
   regie: {
     get(): Promise<IpcResult<RegieData>>;
     status(): Promise<IpcResult<LiveStatus>>;
@@ -95,6 +111,8 @@ export interface StudioBridge {
     setTransition(mode: TransitionMode): Promise<IpcResult<{ ok: boolean; transition: TransitionMode }>>;
     setMute(muted: boolean): Promise<IpcResult<{ ok: boolean; muted: boolean; mic_muted: boolean }>>;
     setOverlay(kind: OverlayKind, payload: Record<string, unknown>): Promise<IpcResult<OverlayUpdateResponse>>;
+    /** The server-drawn overlay layer; `etag`: the copy already held (answered `changed: false` if current). */
+    overlayLayer(etag: string | null): Promise<IpcResult<OverlayLayerFetch>>;
   };
 }
 

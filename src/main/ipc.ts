@@ -21,7 +21,7 @@ async function run<T>(fn: () => Promise<T>): Promise<IpcResult<T>> {
   try {
     return { ok: true, value: await fn() };
   } catch (e) {
-    if (e instanceof ApiError) return { ok: false, status: e.status, message: e.message };
+    if (e instanceof ApiError) return { ok: false, status: e.status, message: e.message, ...(e.code ? { code: e.code } : {}) };
     return { ok: false, status: 0, message: e instanceof Error ? e.message : String(e) };
   }
 }
@@ -142,6 +142,10 @@ export function registerIpc(version: string): Kiosk {
     run(async () => (await api.whip.patchIce(resource, fragment), null)),
   );
   ipcMain.handle("studio:whip-close", (_e, resource: string) => run(async () => (await api.whip.close(resource), null)));
+  ipcMain.handle("setup:enter", () => run(() => api.setup.enter()));
+  ipcMain.handle("setup:leave", () => run(async () => (await api.setup.leave(), null)));
+  ipcMain.handle("setup:whep-offer", (_e, sdp: string) => run(() => api.setup.whepOffer(String(sdp))));
+  ipcMain.handle("setup:whep-close", (_e, resource: string) => run(async () => (await api.setup.whepClose(String(resource)), null)));
   ipcMain.handle("regie:get", () => run(() => api.getRegie()));
   ipcMain.handle("regie:status", () => run(() => api.getLiveStatus()));
   ipcMain.handle("regie:command", (_e, cmd: string, arg?: string, tr?: TransitionMode) =>
@@ -151,6 +155,9 @@ export function registerIpc(version: string): Kiosk {
   ipcMain.handle("regie:set-mute", (_e, muted: boolean) => run(() => api.setMute(Boolean(muted))));
   ipcMain.handle("regie:set-overlay", (_e, kind: OverlayKind, payload: Record<string, unknown>) =>
     run(() => api.setLiveOverlay(kind, payload)),
+  );
+  ipcMain.handle("regie:overlay-layer", (_e, etag: unknown) =>
+    run(() => api.getOverlayLayer(typeof etag === "string" && etag.length <= 200 ? etag : null)),
   );
 
   supervisor.boot();

@@ -18,6 +18,7 @@ import type {
 } from "@core/sources/types";
 import { meterPosition } from "@core/audio/meter";
 import { bridge } from "../bridge";
+import type { RegieLiveView } from "../regie-preview";
 import { resolveRegieShortcut } from "../regie-shortcuts";
 import { Btn, Card } from "../ui";
 import { fr as t } from "../strings";
@@ -41,7 +42,7 @@ const BROWSER_MODES: BrowserSourceMode[] = ["overlay", "fullscreen"];
 const BROWSER_SIZES: BrowserSourceSize[] = ["sm", "md", "lg"];
 
 const inputCls =
-  "rounded-[7px] border border-night-line bg-night-deep px-2.5 py-1.5 text-[0.85rem] text-night-ink placeholder:text-night-dim";
+  "min-h-9 rounded-[7px] border border-[#b9ae94] bg-white px-2.5 py-1.5 text-[0.9rem] text-ink placeholder:text-[#6f7a73] focus:border-deep disabled:bg-paper-2 disabled:text-muted";
 const smallBtn = "min-h-8 px-2.5 py-1 text-[0.84rem]";
 
 /** Incoming-audio strip: real-time level (dBFS) and mute of the stream feeding the broadcast. */
@@ -52,6 +53,8 @@ export interface RegieAudioProps {
 }
 
 export interface RegiePanelProps {
+  /** Scene and overlays currently requested: drawn over the monitor by the parent. */
+  onLiveChange?: (view: RegieLiveView) => void;
   audio?: RegieAudioProps;
   /** Local sources (web source, screen share): the section is hidden while these are not wired. */
   browserSource?: BrowserSourceConfig;
@@ -75,7 +78,7 @@ export function AudioStrip({ level, muted, onToggleMute }: RegieAudioProps) {
   const shown = muted ? -100 : level.rms;
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-night-dim">
+      <div className="flex items-center justify-between text-[0.76rem] font-semibold uppercase tracking-[0.1em] text-green">
         <span>{t.regie.audio}</span>
         <span className="font-normal normal-case tracking-normal tabular-nums">
           {muted ? t.regie.audioMuted : shown <= -99 ? "—" : `${Math.round(shown)} dB`}
@@ -88,7 +91,7 @@ export function AudioStrip({ level, muted, onToggleMute }: RegieAudioProps) {
           aria-valuemin={-60}
           aria-valuemax={0}
           aria-valuenow={Math.round(Math.max(-60, shown))}
-          className="h-2.5 flex-1 overflow-hidden rounded-full bg-night-deep"
+          className="h-2.5 flex-1 overflow-hidden rounded-full bg-paper-2"
         >
           <div
             className="h-full rounded-full transition-[width] duration-75"
@@ -128,7 +131,7 @@ function EyeBtn({
       className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] border transition-colors ${
         visible
           ? "border-leaf bg-leaf/20 text-leaf"
-          : "border-night-line bg-night-deep text-night-dim hover:text-night-ink"
+          : "border-[#b9ae94] bg-white text-muted hover:text-ink"
       } disabled:opacity-50`}
     >
       {visible ? (
@@ -150,6 +153,7 @@ function EyeBtn({
 
 export function RegiePanel({
   audio,
+  onLiveChange,
   browserSource = NO_BROWSER,
   browserStatus = NO_BROWSER_STATUS,
   onBrowserSourceChange = noop,
@@ -288,6 +292,10 @@ export function RegiePanel({
   const scenesList = data?.scenes && data.scenes.length > 0 ? data.scenes : FALLBACK_SCENES;
 
   useEffect(() => {
+    onLiveChange?.({ scene, scenes: scenesList, overlays });
+  }, [onLiveChange, scene, scenesList, overlays]);
+
+  useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const action = resolveRegieShortcut(
         {
@@ -316,14 +324,14 @@ export function RegiePanel({
     <Card title={t.regie.title}>
       <div className="flex flex-col gap-3">
         {displayErr && (
-          <div className="rounded-[7px] border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-[0.84rem] text-red-200">
+          <div className="rounded-[7px] border border-live/40 bg-err-bg px-2.5 py-1.5 text-[0.84rem] text-[#7a1f20]">
             {displayErr}
           </div>
         )}
 
         {/* Scènes */}
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-night-dim">
+          <div className="flex items-center justify-between text-[0.76rem] font-semibold uppercase tracking-[0.1em] text-green">
             <span>{t.regie.scenes}</span>
             <div className="flex items-center gap-1.5">
               <Btn
@@ -372,15 +380,15 @@ export function RegiePanel({
         </div>
 
         {audio && (
-          <div className="border-t border-night-line pt-3">
+          <div className="border-t border-line pt-3">
             <AudioStrip {...audio} />
           </div>
         )}
 
         {/* Sources locales (Source web & Partage d'écran) */}
         {hasLocalSources && (
-        <div className="flex flex-col gap-2.5 border-t border-night-line pt-3">
-          <div className="flex items-center justify-between text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-night-dim">
+        <div className="flex flex-col gap-2.5 border-t border-line pt-3">
+          <div className="flex items-center justify-between text-[0.76rem] font-semibold uppercase tracking-[0.1em] text-green">
             <span>{t.regie.localSources}</span>
             {browserStatus.loading && (
               <span className="font-normal normal-case tracking-normal">{t.regie.browserLoading}</span>
@@ -401,7 +409,7 @@ export function RegiePanel({
                 })
               }
             />
-            <span className="min-w-[115px] text-[0.85rem] font-medium text-night-ink">
+            <span className="min-w-[115px] text-[0.9rem] font-semibold text-ink">
               {t.regie.browserSource}
             </span>
             <input
@@ -491,14 +499,14 @@ export function RegiePanel({
           </div>
 
           {/* Partage d'écran / fenêtre */}
-          <div className="flex flex-wrap items-center gap-1.5 border-t border-night-line/60 pt-2.5">
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-line pt-2.5">
             <EyeBtn
               visible={screenActive}
               label={`${screenActive ? t.regie.hide : t.regie.show} — ${t.regie.screenShare}`}
               disabled={!screenSourceId && !screenActive}
               onClick={onScreenToggle}
             />
-            <span className="min-w-[115px] text-[0.85rem] font-medium text-night-ink">
+            <span className="min-w-[115px] text-[0.9rem] font-semibold text-ink">
               {t.regie.screenShare}
             </span>
             <select
@@ -522,8 +530,8 @@ export function RegiePanel({
         )}
 
         {/* Incrustations serveur */}
-        <div className="flex flex-col gap-2.5 border-t border-night-line pt-3">
-          <div className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-night-dim">
+        <div className="flex flex-col gap-2.5 border-t border-line pt-3">
+          <div className="text-[0.76rem] font-semibold uppercase tracking-[0.1em] text-green">
             {t.regie.overlays}
           </div>
 
@@ -542,7 +550,7 @@ export function RegiePanel({
                 })
               }
             />
-            <span className="min-w-[115px] text-[0.85rem] font-medium text-night-ink">{t.regie.qr}</span>
+            <span className="min-w-[115px] text-[0.9rem] font-semibold text-ink">{t.regie.qr}</span>
             <input
               type="url"
               value={qrUrl}
@@ -589,7 +597,7 @@ export function RegiePanel({
           </div>
 
           {/* Bandeau / Annonce */}
-          <div className="flex flex-wrap items-center gap-1.5 border-t border-night-line/60 pt-2.5">
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-line pt-2.5">
             <EyeBtn
               visible={overlays.banner.visible}
               label={`${overlays.banner.visible ? t.regie.hide : t.regie.show} — ${t.regie.banner}`}
@@ -602,7 +610,7 @@ export function RegiePanel({
                 })
               }
             />
-            <span className="min-w-[115px] text-[0.85rem] font-medium text-night-ink">{t.regie.banner}</span>
+            <span className="min-w-[115px] text-[0.9rem] font-semibold text-ink">{t.regie.banner}</span>
             <input
               type="text"
               value={bannerTitle}
@@ -636,14 +644,14 @@ export function RegiePanel({
           </div>
 
           {/* Logo de la mosquée */}
-          <div className="flex items-center gap-1.5 border-t border-night-line/60 pt-2.5">
+          <div className="flex items-center gap-1.5 border-t border-line pt-2.5">
             <EyeBtn
               visible={overlays.logo.visible}
               label={`${overlays.logo.visible ? t.regie.hide : t.regie.show} — ${t.regie.logo}`}
               disabled={busy}
               onClick={() => void updateOverlay("logo", { visible: !overlays.logo.visible })}
             />
-            <span className="text-[0.85rem] font-medium text-night-ink">{t.regie.logo}</span>
+            <span className="text-[0.9rem] font-semibold text-ink">{t.regie.logo}</span>
           </div>
         </div>
       </div>

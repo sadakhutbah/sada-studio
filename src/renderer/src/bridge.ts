@@ -1,10 +1,11 @@
 import type { OverlayKind, TransitionMode } from "@core/api/types";
 import { ApiError } from "@core/errors";
+import type { WhepSignaling } from "@core/transport/whep";
 import type { WhipSignaling } from "@core/transport/whip";
 import type { IpcResult } from "@shared/ipc";
 
 export function unwrap<T>(r: IpcResult<T>): T {
-  if (!r.ok) throw new ApiError(r.status, r.message);
+  if (!r.ok) throw new ApiError(r.status, r.message, r.code);
   return r.value;
 }
 
@@ -15,7 +16,17 @@ export const whipSignaling: WhipSignaling = {
   close: async (resource) => void unwrap(await window.studio.whipClose(resource)),
 };
 
+/** WHEP signalling of the setup programme view, through the main process (it holds the device secret). */
+export const whepSignaling: WhepSignaling = {
+  offer: async (sdp) => unwrap(await window.studio.setup.whepOffer(sdp)),
+  close: async (resource) => void unwrap(await window.studio.setup.whepClose(resource)),
+};
+
 export const bridge = {
+  setup: {
+    enter: async () => unwrap(await window.studio.setup.enter()),
+    leave: async () => void unwrap(await window.studio.setup.leave()),
+  },
   regie: {
     get: async () => unwrap(await window.studio.regie.get()),
     status: async () => unwrap(await window.studio.regie.status()),
@@ -25,5 +36,6 @@ export const bridge = {
     setMute: async (muted: boolean) => unwrap(await window.studio.regie.setMute(muted)),
     setOverlay: async (kind: OverlayKind, payload: Record<string, unknown>) =>
       unwrap(await window.studio.regie.setOverlay(kind, payload)),
+    overlayLayer: async (etag: string | null) => unwrap(await window.studio.regie.overlayLayer(etag)),
   },
 };

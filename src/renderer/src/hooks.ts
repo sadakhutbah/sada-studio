@@ -6,7 +6,12 @@ import { evaluateHealth, toChecks, type HealthItem } from "@core/health/health";
 import type { SessionState } from "@core/session/machine";
 import type { BroadcastSession, SessionSnapshot } from "@core/session/broadcast-session";
 import type { SourceOptions } from "@core/sources/types";
+import type { SetupState } from "@core/api/types";
+import { ApiError } from "@core/errors";
+import { IDLE_LIMIT_MS, isIdle, renewDelayMs, setupPhase, type SetupPhase } from "@core/setup/view";
+import { LAYER_POLL_MS, LAYER_RETRY_MS, layerMode, type LayerMode } from "@core/setup/overlay-layer";
 import type { KioskSnapshot } from "@shared/ipc";
+import { bridge } from "./bridge";
 import { createBroadcast } from "./studio";
 
 export interface DeviceLists {
@@ -210,4 +215,134 @@ export function useReporter(
     const id = setInterval(send, 10_000);
     return () => clearInterval(id);
   }, [state.status, camera, micro, checks, lastError, startFailure]);
+}
+
+export interface SetupMode {
+  wanted: boolean;
+  state: SetupState | null;
+  error: "server" | "lapsed" | null;
+  /** Shown once after the mode closed by itself (inactivity). */
+  idleClosed: boolean;
+  /** The programme picture reports whether it plays (set by the programme view). */
+  setPlaying: (playing: boolean) => void;
+  phase: SetupPhase;
+  open: () => void;
+  close: () => void;
+}
+
+/**
+ * Setup mode: while open, the lease is renewed (every few seconds, which is also how the answer is polled: the
+ * orchestrator may take a minute to wake). It closes by itself after a long inactivity so the orchestrator can
+ * go back to sleep, and when the window goes away (the server's lease lapses by itself if even that is lost).
+ */
+export function useSetupMode(): SetupMode {
+  const [wanted, setWanted] = useState(false);
+  const [state, setState] = useState<SetupState | null>(null);
+  const [error, setError] = useState<"server" | "lapsed" | null>(null);
+  const [idleClosed, setIdleClosed] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const lastActivity = useRef(0);
+  const phase = setupPhase({ wanted, state, error, playing });
+  const phaseRef = useRef(phase);
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+
+  const open = useCallback(() => {
+    setIdleClosed(false);
+    lastActivity.current = Date.now();
+    setWanted(true);
+  }, []);
+  const close = useCallback(() => setWanted(false), []);
+
+  useEffect(() => {
+    if (!wanted) return;
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const touch = () => {
+      lastActivity.current = Date.now();
+    };
+    const events = ["pointerdown", "keydown", "wheel"] as const;
+    for (const e of events) window.addEventListener(e, touch, { passive: true });
+    const renew = async () => {
+      if (isIdle(lastActivity.current, Date.now(), IDLE_LIMIT_MS)) {
+        setIdleClosed(true);
+        setWanted(false);
+        return;
+      }
+      try {
+        const s = await bridge.setup.enter();
+        if (!alive) return;
+        setState(s);
+        setError(null);
+      } catch (e) {
+        if (!alive) return;
+        setError(e instanceof ApiError && e.code === "setup_off" ? "lapsed" : "server");
+      }
+      if (alive) timer = setTimeout(() => void renew(), renewDelayMs(phaseRef.current));
+    };
+    void renew();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      for (const e of events) window.removeEventListener(e, touch);
+      setState(null);
+      setError(null);
+      setPlaying(false);
+      void bridge.setup.leave().catch(() => undefined);
+    };
+  }, [wanted]);
+
+  return { wanted, state, error, idleClosed, setPlaying, phase, open, close };
+}
+
+/** Base64 of a PNG, as a `data:` URL (the renderer's CSP allows `data:` images, not `blob:`). */
+function pngDataUrl(png: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < png.length; i += 0x8000) bin += String.fromCharCode(...png.subarray(i, i + 0x8000));
+  return `data:image/png;base64,${btoa(bin)}`;
+}
+
+export interface OverlayLayer {
+  /** The server-drawn layer (`data:` URL), or null before the first image. */
+  src: string | null;
+  mode: LayerMode;
+}
+
+/**
+ * The overlay layer the server draws (see `@core/setup/overlay-layer`): fetched while `active`, revalidated by ETag
+ * every few seconds and at once when `stateKey` (the overlay state known locally, the setup flag) changes.
+ */
+export function useOverlayLayer(active: boolean, stateKey: string): OverlayLayer {
+  const [src, setSrc] = useState<string | null>(null);
+  const [failures, setFailures] = useState(0);
+  const etag = useRef<string | null>(null);
+  const failed = useRef(0);
+  useEffect(() => {
+    if (!active) return;
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      try {
+        const r = await bridge.regie.overlayLayer(etag.current);
+        if (stop) return;
+        if (r.changed) {
+          etag.current = r.etag || null;
+          setSrc(pngDataUrl(r.png));
+        }
+        failed.current = 0;
+      } catch {
+        if (stop) return;
+        failed.current += 1;
+      }
+      setFailures(failed.current);
+      timer = setTimeout(() => void tick(), failed.current ? LAYER_RETRY_MS : LAYER_POLL_MS);
+    };
+    void tick();
+    return () => {
+      stop = true;
+      clearTimeout(timer);
+    };
+  }, [active, stateKey]);
+  return { src: active ? src : null, mode: active ? layerMode(src !== null, failures) : "pending" };
 }
