@@ -81,7 +81,10 @@ const fr = {
   "quit.title": "Quitter {app}",
   "quit.live": "Un direct est en cours. Quitter l'arrêtera.",
   "quit.idle": "Quitter Sada Studio ?",
-  "quit.detail": "Une fois fermée, l'application ne diffusera plus les directs planifiés, jusqu'au prochain démarrage de Windows ou de l'application.",
+  "quit.detail": "Une fois fermée, l'application ne diffusera plus les directs planifiés, jusqu'au prochain démarrage {os} ou de l'application.",
+  "quit.os.win32": "de Windows",
+  "quit.os.darwin": "de macOS",
+  "quit.os.other": "de l'ordinateur",
   "quit.stay": "Rester",
   "tray.open": "Ouvrir Sada Studio",
   "quit.quit": "Quitter",
@@ -215,7 +218,10 @@ const en: Record<MessageKey, string> = {
   "quit.title": "Quit {app}",
   "quit.live": "A live is running. Quitting will stop it.",
   "quit.idle": "Quit Sada Studio?",
-  "quit.detail": "Once closed, the application will no longer broadcast scheduled lives until Windows or the application starts again.",
+  "quit.detail": "Once closed, the application will no longer broadcast scheduled lives until {os} or the application starts again.",
+  "quit.os.win32": "Windows",
+  "quit.os.darwin": "macOS",
+  "quit.os.other": "the computer",
   "quit.stay": "Stay",
   "tray.open": "Open Sada Studio",
   "quit.quit": "Quit",
@@ -298,4 +304,9 @@ export function intlLocale(): string {
 /** Looks a message up in the current locale and fills its `{placeholders}`. */
 export function t(key: MessageKey, vars: Record<string, string | number> = {}): string {
   return catalogs[current][key].replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));
+}
+
+/** Name of the system in the quit dialog: Windows and macOS by name, anything else (Linux) neutral. */
+export function quitSystemLabel(platform: string): string {
+  return t(platform === "win32" ? "quit.os.win32" : platform === "darwin" ? "quit.os.darwin" : "quit.os.other");
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { getLocale, setLocale, t } from "../src/core/messages";
+import { getLocale, quitSystemLabel, setLocale, t } from "../src/core/messages";
 import { formatWhen } from "../src/core/kiosk/format";
 
 const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
@@ -31,5 +31,29 @@ describe("core messages", () => {
     setLocale("en");
     expect(t("api.liveActiveSince", { time: "12:05" })).toBe("A live is already running since 12:05.");
     expect(formatWhen(new Date(2026, 10, 27, 13, 0).getTime(), now)).toMatch(/^today at 13:00$/);
+  });
+});
+
+describe("quit dialog system name", () => {
+  afterEach(() => setLocale("en"));
+
+  it("names Windows and macOS, and stays neutral elsewhere", () => {
+    setLocale("fr");
+    expect(t("quit.detail", { os: quitSystemLabel("darwin") })).toContain("démarrage de macOS ou de l'application");
+    expect(t("quit.detail", { os: quitSystemLabel("win32") })).toContain("démarrage de Windows ou de l'application");
+    expect(t("quit.detail", { os: quitSystemLabel("linux") })).toContain("démarrage de l'ordinateur ou de l'application");
+    setLocale("en");
+    expect(t("quit.detail", { os: quitSystemLabel("darwin") })).toBe(
+      "Once closed, the application will no longer broadcast scheduled lives until macOS or the application starts again.",
+    );
+    expect(quitSystemLabel("win32")).toBe("Windows");
+    expect(quitSystemLabel("freebsd")).toBe("the computer");
+  });
+
+  it("never says Windows on macOS or Linux", () => {
+    for (const locale of ["fr", "en"] as const) {
+      setLocale(locale);
+      for (const p of ["darwin", "linux"]) expect(t("quit.detail", { os: quitSystemLabel(p) })).not.toMatch(/Windows/);
+    }
   });
 });

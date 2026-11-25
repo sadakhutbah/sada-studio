@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, Menu, nativeImage, session, shell, Tray } f
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { backoffDelay } from "../core/kiosk/backoff";
-import { t } from "../core/messages";
+import { quitSystemLabel, t } from "../core/messages";
 import { registerProjector } from "./projector";
 import { registerIpc, type Kiosk } from "./ipc";
 import { log } from "./log";
@@ -139,7 +139,7 @@ async function requestQuit() {
     type: "warning",
     title: t("quit.title", { app: APP_NAME }),
     message: live ? t("quit.live") : t("quit.idle"),
-    detail: t("quit.detail"),
+    detail: t("quit.detail", { os: quitSystemLabel(process.platform) }),
     buttons: [t("quit.stay"), t("quit.quit")],
     defaultId: 0,
     cancelId: 0,
