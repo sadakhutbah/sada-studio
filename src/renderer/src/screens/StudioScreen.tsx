@@ -32,7 +32,7 @@ import { SettingsPanel } from "./SettingsPanel";
 const kindLabel = (k: StreamKind) => fr.live[k];
 
 export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
-  const { session: live, source, composited, compositor, snapshot } = useBroadcast();
+  const { session: live, source, composited, compositor, audioMix, snapshot } = useBroadcast();
   const { state, stats } = snapshot;
   const active = isActive(state);
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
@@ -46,8 +46,10 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   const [muted, setMuted] = useState(false);
   useEffect(() => mixer.subscribe(setMuted), [mixer]);
   useEffect(() => {
-    if (stream) mixer.mix([stream]);
-  }, [mixer, stream]);
+    // The microphone itself is what the mute acts on: with the mix on air, a muted microphone is silent in the mix while
+    // the sound of the screen and of the page goes on.
+    if (stream) mixer.mix([composited.rawStream ?? stream]);
+  }, [mixer, composited, stream]);
   useEffect(() => () => mixer.dispose(), [mixer]);
   const [muteError, setMuteError] = useState<string | null>(null);
   const toggleMute = () => {
@@ -93,7 +95,22 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
       return next;
     });
   }, []);
-  const local = useLocalSources(compositor, source, prefs.browserSource, persistBrowser, prefs.lastScreen, persistScreen);
+  const persistAudio = useCallback((m: Prefs["audioMix"]) => {
+    setPrefs((p) => {
+      if (JSON.stringify(p.audioMix) === JSON.stringify(m)) return p;
+      const next = { ...p, audioMix: m };
+      savePrefs(next);
+      return next;
+    });
+  }, []);
+  const local = useLocalSources({
+    compositor,
+    source,
+    mix: audioMix,
+    browser: { saved: prefs.browserSource, onPersist: persistBrowser },
+    screen: { saved: prefs.lastScreen, onPersist: persistScreen },
+    audio: { saved: prefs.audioMix, onPersist: persistAudio },
+  });
 
   const { view: capture, audioInputs, refreshAudioInputs } = useCapture();
   const ipMode = capture?.settings.sourceKind === "ip-camera";
@@ -118,14 +135,14 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   const sourceOptions = useMemo<SourceOptions>(
     () => ({
       sourceKind: local.screenActive ? "screen" : ipMode ? "ip-camera" : "camera",
-      screen: local.screenActive ? { sourceId: local.screenSourceId, includeMic: true } : undefined,
+      screen: local.screenActive ? { sourceId: local.screenSourceId, includeMic: true, systemAudio: local.screenSystemAudio } : undefined,
       ipCamera: ipMode ? { rtspUrl, audioDevice } : undefined,
       videoDeviceId: prefs.videoDeviceId || undefined,
       audioDeviceId: prefs.audioDeviceId || undefined,
       audio: prefs.audio,
       audioDelayMs: ipMode ? undefined : webcamDelay,
     }),
-    [local.screenActive, local.screenSourceId, ipMode, rtspUrl, audioDevice, prefs.videoDeviceId, prefs.audioDeviceId, prefs.audio, webcamDelay],
+    [local.screenActive, local.screenSourceId, local.screenSystemAudio, ipMode, rtspUrl, audioDevice, prefs.videoDeviceId, prefs.audioDeviceId, prefs.audio, webcamDelay],
   );
   const setCaptureSettings = (patch: Partial<CaptureSettings>) => {
     if (capture) void window.studio.capture.setSettings({ ...capture.settings, ...patch });

@@ -17,7 +17,16 @@ const CORNERS: BrowserSourceCorner[] = ["tl", "tr", "bl", "br"];
 const BROWSER_MODES: BrowserSourceMode[] = ["overlay", "fullscreen"];
 const BROWSER_SIZES: BrowserSourceSize[] = ["sm", "md", "lg"];
 
+/** Sound of a source in the live: on/off and volume (percent, 100 = the source's own level). */
+export interface SourceAudioControls {
+  enabled: boolean;
+  volume: number;
+  onEnabled: (enabled: boolean) => void;
+  onVolume: (percent: number) => void;
+}
+
 export interface BrowserSourceControls {
+  audio: SourceAudioControls;
   config: BrowserSourceConfig;
   status: BrowserSourceStatus;
   error: string | null;
@@ -32,6 +41,8 @@ export interface BrowserSourceControls {
 }
 
 export interface ScreenShareControls {
+  /** The system sound exists on this computer (Windows): `reason` says why not, otherwise. */
+  audio: SourceAudioControls & { supported: boolean; reason: string | null };
   active: boolean;
   sourceId: string;
   sources: DesktopSourceInfo[];
@@ -63,7 +74,30 @@ export function LocalSources({ browser, screen }: LocalSourcesProps) {
   );
 }
 
-function BrowserSourceRow({ config, status, error, onAdd, onRemove, onReload, onApplyUrl, onVisible, onLayout }: BrowserSourceControls) {
+function SourceAudioRow({ label, audio, disabled }: { label: string; audio: SourceAudioControls; disabled?: boolean }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 pl-9 text-[0.84rem] text-ink">
+      <label className="flex items-center gap-1.5">
+        <input type="checkbox" checked={audio.enabled} disabled={disabled} onChange={(e) => audio.onEnabled(e.target.checked)} />
+        <span>{label}</span>
+      </label>
+      <input
+        type="range"
+        min={0}
+        max={200}
+        step={5}
+        value={audio.volume}
+        disabled={disabled || !audio.enabled}
+        aria-label={`${t.regie.audioVolume} — ${label}`}
+        onChange={(e) => audio.onVolume(Number(e.target.value))}
+        className="w-36"
+      />
+      <span className="w-10 tabular-nums text-muted">{audio.volume} %</span>
+    </div>
+  );
+}
+
+function BrowserSourceRow({ audio, config, status, error, onAdd, onRemove, onReload, onApplyUrl, onVisible, onLayout }: BrowserSourceControls) {
   const [url, setUrl] = useState(config.url);
   const [seenUrl, setSeenUrl] = useState(config.url);
   // The address changed outside the field (restored, rewritten by the main process): state adjusted during render.
@@ -119,6 +153,7 @@ function BrowserSourceRow({ config, status, error, onAdd, onRemove, onReload, on
           </Btn>
         )}
       </div>
+      {added && <SourceAudioRow label={t.regie.audioBrowser} audio={audio} />}
       {added && removal === "confirming" && (
         <div role="alertdialog" aria-label={t.regie.removeConfirmTitle} className="ml-9 rounded-lg bg-err-bg px-3 py-2.5">
           <p className="m-0 font-semibold text-[#7a1f20]">{t.regie.removeConfirmTitle}</p>
@@ -191,7 +226,7 @@ function BrowserSourceRow({ config, status, error, onAdd, onRemove, onReload, on
   );
 }
 
-function ScreenShareRow({ active, sourceId, sources, loading, error, denied, suggestPick, onRefresh, onSelect, onToggle, onOpenSettings }: ScreenShareControls) {
+function ScreenShareRow({ audio, active, sourceId, sources, loading, error, denied, suggestPick, onRefresh, onSelect, onToggle, onOpenSettings }: ScreenShareControls) {
   const [open, setOpen] = useState(false);
   const [suggested, setSuggested] = useState(false);
   // The remembered source no longer exists: the picker opens by itself, once (its list is already loaded).
@@ -255,6 +290,8 @@ function ScreenShareRow({ active, sourceId, sources, loading, error, denied, sug
           </div>
         </div>
       )}
+      <SourceAudioRow label={t.regie.audioScreen} audio={audio} disabled={!audio.supported} />
+      {!audio.supported && audio.reason && <p className="m-0 pl-9 text-[0.8rem] text-muted">{audio.reason}</p>}
       {error && (
         <p role="alert" className="m-0 text-[0.82rem] text-live">
           {error}

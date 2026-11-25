@@ -41,12 +41,14 @@ const bridge: StudioBridge = {
       reload: () => ipcRenderer.invoke("sources:browser-reload"),
       setVisible: (visible) => ipcRenderer.invoke("sources:browser-set-visible", visible),
       stop: () => ipcRenderer.invoke("sources:browser-stop"),
+      audioSourceId: () => ipcRenderer.invoke("sources:browser-audio-id"),
     },
     screen: {
       access: () => ipcRenderer.invoke("sources:screen-access"),
       list: () => ipcRenderer.invoke("sources:screen-list"),
       select: (sourceId) => ipcRenderer.invoke("sources:screen-select", sourceId),
       openSettings: () => ipcRenderer.invoke("sources:screen-open-settings"),
+      audioSupport: () => ipcRenderer.invoke("sources:screen-audio-support"),
     },
   },
   media: {

@@ -78,6 +78,8 @@ export const SOURCE_INVOKE_CHANNELS = [
   "sources:screen-list",
   "sources:screen-select",
   "sources:screen-open-settings",
+  "sources:screen-audio-support",
+  "sources:browser-audio-id",
 ] as const;
 /** One-way UI -> main. */
 export const SOURCE_SEND_CHANNELS = ["sources:browser-frame-ack"] as const;

@@ -30,10 +30,12 @@ export const bridge = {
       reload: async () => unwrap(await window.studio.sources.browser.reload()),
       setVisible: async (visible: boolean) => unwrap(await window.studio.sources.browser.setVisible(visible)),
       stop: async () => unwrap(await window.studio.sources.browser.stop()),
+      audioSourceId: async () => unwrap(await window.studio.sources.browser.audioSourceId()),
     },
     screen: {
       list: async () => unwrap(await window.studio.sources.screen.list()),
       select: async (sourceId: string | null) => void unwrap(await window.studio.sources.screen.select(sourceId)),
+      audioSupport: async () => unwrap(await window.studio.sources.screen.audioSupport()),
     },
   },
   setup: {

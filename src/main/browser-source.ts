@@ -119,6 +119,16 @@ export class BrowserSourceService {
     return this.getStatus();
   }
 
+  /**
+   * Identifier with which `requester` (the application window) captures this page's sound (tab capture). The page stays
+   * muted on this computer: the capture does not need it audible, and nothing plays on the speakers.
+   */
+  audioSourceId(requester: Electron.WebContents): string | null {
+    const win = this.win;
+    if (!win || win.isDestroyed() || !this.status.active) return null;
+    return win.webContents.getMediaSourceId(requester);
+  }
+
   reload(): BrowserSourceStatus {
     if (!this.win || this.win.isDestroyed() || !this.status.url) return this.getStatus();
     this.setStatus({ ...this.status, loading: true, error: null });

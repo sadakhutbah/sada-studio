@@ -9,6 +9,9 @@
 - **Live switching**: showing or hiding the web source, or switching the screen share on or off, changes the picture of a running live without cutting the connection (the video and audio senders' tracks are replaced on the open WHIP session).
 - macOS: when the screen-recording permission is refused, a clear message and a button to the System Settings replace an empty list.
 
+- **Sound of the shared screen and of the web page in the live**: both are mixed (Web Audio) with the local microphone, each with its own on/off and volume (0 to 200 %) in the Régie panel; the settings are remembered. Switching a sound on or off swaps the audio sender on the open WHIP session (`replaceTrack`): the live is never cut, and while only the microphone is audible it goes out untouched. The microphone's mute still acts on the microphone alone. The web page stays silent on this computer: its sound is captured, not played.
+- The screen's sound is captured through system audio loopback, which Electron only offers on Windows. On macOS and Linux the switch is disabled and says why; the microphone is still broadcast with the screen.
+
 ### Changed
 
 - The last shared screen or window is remembered. At the next launch it is selected again if it still exists (a window is found again by its name when the system gave it a new id, unless two windows share that name); otherwise the list opens so another one can be picked. Sharing itself stays off until the operator switches it on, and the list is only read at launch when the system already allows screen recording (no permission prompt at startup).

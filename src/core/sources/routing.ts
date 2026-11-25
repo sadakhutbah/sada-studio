@@ -26,6 +26,11 @@ export class RoutingSource implements MediaSourceStrategy {
     return this.sources[kind]?.sync;
   }
 
+  /** Sound of the current source's share (the shared screen's), null when it has none. */
+  systemAudio(): MediaStream | null {
+    return this.current ? (this.sources[this.current]?.systemAudio?.() ?? null) : null;
+  }
+
   private pick(o: SourceOptions): string {
     const k = o.sourceKind ?? this.fallback;
     return k in this.sources ? k : this.fallback;

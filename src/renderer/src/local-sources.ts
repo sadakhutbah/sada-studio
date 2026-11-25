@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AudioSourceMix, MixInputId, MixSettings } from "@core/audio/source-mix";
+import { clampVolume } from "@core/audio/source-mix";
 import { ApiError } from "@core/errors";
 import { t } from "@core/messages";
 import { DEFAULT_BROWSER_SOURCE } from "@core/sources/browser-source";
 import type { StudioSceneCompositor } from "@core/sources/compositor";
 import { findRemembered, rememberedFrom, type RememberedScreen } from "@core/sources/remembered";
 import type { RoutingSource } from "@core/sources/routing";
+import type { ScreenAudioSupport } from "@core/sources/screen-audio";
 import type { BrowserSourceConfig, BrowserSourceStatus, DesktopSourceInfo } from "@core/sources/types";
 import { bridge } from "./bridge";
 import type { LocalSourcesProps } from "./components/LocalSources";
@@ -22,6 +25,8 @@ export interface LocalSourcesState {
   /** The programme is the shared screen or window (chosen and switched on). */
   screenActive: boolean;
   screenSourceId: string;
+  /** The system sound can be asked for with the share (Windows): put in the source options. */
+  screenSystemAudio: boolean;
   /** The shared screen could not be captured: it is switched off and the message shown. */
   failScreen: (message: string) => void;
 }
@@ -30,14 +35,20 @@ export interface LocalSourcesState {
  * State of the local sources, held by the studio screen so that it survives the Régie panel being remounted:
  * the web source (hidden window in the main process, frames pushed into the compositor) and the screen / window share.
  */
-export function useLocalSources(
-  compositor: StudioSceneCompositor,
-  source: RoutingSource,
-  saved: Prefs["browserSource"],
-  onPersist: (b: Prefs["browserSource"]) => void,
-  savedScreen: RememberedScreen | null = null,
-  onPersistScreen: (s: RememberedScreen) => void = () => undefined,
-): LocalSourcesState {
+export interface LocalSourcesOptions {
+  compositor: StudioSceneCompositor;
+  source: RoutingSource;
+  /** Mix of the microphone with the sound of the screen and of the page. */
+  mix: AudioSourceMix;
+  browser: { saved: Prefs["browserSource"]; onPersist: (b: Prefs["browserSource"]) => void };
+  screen: { saved: RememberedScreen | null; onPersist: (s: RememberedScreen) => void };
+  audio: { saved: MixSettings; onPersist: (m: MixSettings) => void };
+}
+
+export function useLocalSources({ compositor, source, mix, browser: browserPrefs, screen: screenPrefs, audio: audioPrefs }: LocalSourcesOptions): LocalSourcesState {
+  const { saved, onPersist } = browserPrefs;
+  const savedScreen = screenPrefs.saved;
+  const onPersistScreen = screenPrefs.onPersist;
   const [config, setConfig] = useState<BrowserSourceConfig>({ ...DEFAULT_BROWSER_SOURCE, ...saved, visible: false });
   const [status, setStatus] = useState<BrowserSourceStatus>(IDLE);
   const [browserError, setBrowserError] = useState<string | null>(null);
@@ -51,6 +62,27 @@ export function useLocalSources(
   // Last shared screen: read once at launch, then kept up to date with the operator's choices.
   const remembered = useRef<RememberedScreen | null>(savedScreen);
   const [suggestPick, setSuggestPick] = useState(false);
+
+  // Sound of the shared screen and of the web page: on/off and volume of each, applied live to the mix.
+  const [mixSettings, setMixSettings] = useState<MixSettings>(audioPrefs.saved);
+  const [audioSupport, setAudioSupport] = useState<ScreenAudioSupport>({ supported: false, reason: null });
+  const [pageAudio, setPageAudio] = useState<MediaStream | null>(null);
+  const [pageAudioError, setPageAudioError] = useState<string | null>(null);
+  const { onPersist: onPersistAudio } = audioPrefs;
+  useEffect(() => {
+    mix.configure(mixSettings);
+    onPersistAudio(mixSettings);
+  }, [mix, mixSettings, onPersistAudio]);
+  useEffect(() => {
+    let alive = true;
+    void bridge.sources.screen.audioSupport().then((s) => alive && setAudioSupport(s), () => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const setMixInput = useCallback((id: MixInputId, patch: Partial<MixSettings[MixInputId]>) => {
+    setMixSettings((m) => ({ ...m, [id]: { ...m[id], ...patch, ...(patch.volume !== undefined ? { volume: clampVolume(patch.volume) } : {}) } }));
+  }, []);
 
   // The main process owns the hidden window: follow it, and adopt it when the UI was reloaded under it.
   useEffect(() => {
@@ -71,6 +103,37 @@ export function useLocalSources(
   useEffect(() => {
     compositor.setBrowserConfig({ ...config, visible: browserVisible });
   }, [compositor, config, browserVisible]);
+
+  // The page's sound is captured as soon as the page exists (the page itself stays muted on this computer), and only
+  // reaches the mix while it is shown: a hidden page is silent in the live too.
+  useEffect(() => {
+    if (!status.active) return;
+    let alive = true;
+    let captured: MediaStream | null = null;
+    void (async () => {
+      try {
+        const id = await bridge.sources.browser.audioSourceId();
+        if (!alive || !id) return;
+        captured = await navigator.mediaDevices.getUserMedia({
+          video: false,
+          audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: id } } as unknown as MediaTrackConstraints,
+        });
+        if (!alive) return captured.getTracks().forEach((tr) => tr.stop());
+        setPageAudioError(null);
+        setPageAudio(captured);
+      } catch {
+        if (alive) setPageAudioError(t("browser.audioFailed"));
+      }
+    })();
+    return () => {
+      alive = false;
+      captured?.getTracks().forEach((tr) => tr.stop());
+      setPageAudio(null);
+    };
+  }, [status.active]);
+  useEffect(() => {
+    mix.setInput("browser", browserVisible ? pageAudio : null);
+  }, [mix, pageAudio, browserVisible]);
 
   // Frames: taken by the compositor, then acknowledged so the main process may send the next one (it sends one at a time).
   useEffect(() => {
@@ -172,7 +235,8 @@ export function useLocalSources(
       browser: {
         config,
         status,
-        error: browserError,
+        error: browserError ?? pageAudioError,
+        audio: { enabled: mixSettings.browser.enabled, volume: Math.round(mixSettings.browser.volume * 100), onEnabled: (enabled) => setMixInput("browser", { enabled }), onVolume: (pc) => setMixInput("browser", { volume: pc / 100 }) },
         onAdd: (url) => void start(url),
         onApplyUrl: (url) => void start(url),
         onRemove: () => {
@@ -195,6 +259,14 @@ export function useLocalSources(
         denied,
         onRefresh: () => void refresh(),
         suggestPick,
+        audio: {
+          enabled: mixSettings.screen.enabled,
+          volume: Math.round(mixSettings.screen.volume * 100),
+          onEnabled: (enabled) => setMixInput("screen", { enabled }),
+          onVolume: (pc) => setMixInput("screen", { volume: pc / 100 }),
+          supported: audioSupport.supported,
+          reason: audioSupport.reason,
+        },
         onSelect: (id) => {
           setScreenId(id);
           setScreenError(null);
@@ -219,8 +291,8 @@ export function useLocalSources(
         onOpenSettings: () => void window.studio.sources.screen.openSettings(),
       },
     }),
-    [config, status, browserError, start, screenOn, screenId, sources, loading, screenError, denied, suggestPick, refresh, remember],
+    [config, status, browserError, start, screenOn, screenId, sources, loading, screenError, denied, suggestPick, refresh, remember, mixSettings, setMixInput, audioSupport, pageAudioError],
   );
 
-  return { props, browserVisible, screenActive: screenOn && screenId !== "", screenSourceId: screenId, failScreen };
+  return { props, browserVisible, screenActive: screenOn && screenId !== "", screenSourceId: screenId, screenSystemAudio: audioSupport.supported, failScreen };
 }

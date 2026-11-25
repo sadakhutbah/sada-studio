@@ -1,6 +1,7 @@
 import { BrowserWindow, desktopCapturer, ipcMain, session, webContents, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
 import { ApiError } from "../core/errors";
 import { t } from "../core/messages";
+import { screenAudioSupport } from "../core/sources/screen-audio";
 import type { DesktopSourceInfo } from "../core/sources/types";
 import type { IpcResult } from "../shared/ipc";
 import { BrowserSourceService } from "./browser-source";
@@ -53,12 +54,17 @@ export function registerSources(getMain: () => BrowserWindow | null): { dispose(
   handle("sources:browser-reload", () => browser.reload());
   handle("sources:browser-set-visible", (_e, visible) => browser.setVisible(Boolean(visible)));
   handle("sources:browser-stop", () => browser.stop());
+  handle("sources:browser-audio-id", () => {
+    const main = mainContents();
+    return main ? browser.audioSourceId(main) : null;
+  });
   ipcMain.on("sources:browser-frame-ack", (e) => {
     if (fromMain(e)) browser.ackFrame();
   });
 
   ipcMain.handle("sources:screen-access", (e) => (fromMain(e) ? screenAccessStatus() : "denied"));
   ipcMain.handle("sources:screen-open-settings", (e) => (fromMain(e) ? openMediaSettings("screen") : undefined));
+  handle("sources:screen-audio-support", () => screenAudioSupport(process.platform));
   handle("sources:screen-list", async (): Promise<DesktopSourceInfo[]> => {
     requireScreenAccess();
     const found = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: THUMBNAIL, fetchWindowIcons: false });
@@ -92,7 +98,9 @@ export function registerSources(getMain: () => BrowserWindow | null): { dispose(
           if (!main || !caller || caller.id !== main.id || !selected || s === "denied" || s === "restricted") return callback({});
           const sources = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 0, height: 0 } });
           const source = sources.find((x) => x.id === selected);
-          callback(source ? { video: source } : {});
+          // The sound of the share only where Electron can capture it (Windows loopback), and only when the page asked.
+          const withSound = request.audioRequested && screenAudioSupport(process.platform).supported;
+          callback(source ? { video: source, ...(withSound ? { audio: "loopback" as const } : {}) } : {});
         } catch {
           callback({});
         }
