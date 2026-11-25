@@ -12,6 +12,8 @@ import type { CalibrationView, CaptureSettings, CaptureView } from "../core/capt
 import type { WindowsFacts } from "../core/health/health";
 import type { ClientReport, KioskView } from "../core/kiosk/supervisor";
 import type { UpdateStatus } from "../core/kiosk/update-gate";
+import type { ControlRequest, ControlResult, ShortcutAction } from "../core/control/actions";
+import type { ControlView } from "../core/control/settings";
 import type { ScreenAudioSupport } from "../core/sources/screen-audio";
 import type { BrowserSourceFrame, BrowserSourceStatus, DesktopSourceInfo, ScreenAccess } from "../core/sources/types";
 
@@ -97,8 +99,22 @@ export interface SourcesBridge {
   };
 }
 
+/** Global shortcuts and local control API (Stream Deck, Companion): settings, and the actions the window runs. */
+export interface ControlBridge {
+  get(): Promise<IpcResult<ControlView>>;
+  /** "" removes the shortcut. */
+  setShortcut(action: ShortcutAction, accelerator: string): Promise<IpcResult<ControlView>>;
+  setApi(enabled: boolean, port: number): Promise<IpcResult<ControlView>>;
+  regenerateToken(): Promise<IpcResult<ControlView>>;
+  /** Puts the API token on the system clipboard. */
+  copyToken(): Promise<IpcResult<null>>;
+  /** The window runs the actions asked from outside (shortcuts, local API); its answer is sent back by the preload. */
+  onRequest(handler: (request: ControlRequest) => Promise<ControlResult> | ControlResult): () => void;
+}
+
 /** What the main process exposes to the UI (`window.studio`). */
 export interface StudioBridge {
+  control: ControlBridge;
   capture: CaptureBridge;
   sources: SourcesBridge;
   media: {

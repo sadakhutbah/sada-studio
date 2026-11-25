@@ -3,6 +3,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { backoffDelay } from "../core/kiosk/backoff";
 import { quitSystemLabel, t } from "../core/messages";
+import { registerControl } from "./control";
 import { registerProjector } from "./projector";
 import { registerSources } from "./sources";
 import { registerIpc, type Kiosk } from "./ipc";
@@ -49,6 +50,7 @@ let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let kiosk: Kiosk | null = null;
 let sources: { dispose(): void } | null = null;
+let control: { dispose(): void } | null = null;
 let quitting = false;
 
 const iconPath = () => (app.isPackaged ? join(process.resourcesPath, "icon.png") : join(app.getAppPath(), "build/icon.png"));
@@ -228,6 +230,7 @@ app.on("before-quit", () => {
   // ffmpeg must not outlive the application.
   void kiosk?.capture.dispose();
   sources?.dispose();
+  control?.dispose();
 });
 // Windows shutdown or sign-out: never block it.
 app.on("session-end" as never, () => {
@@ -245,6 +248,7 @@ void app.whenReady().then(() => {
   kiosk = registerIpc(app.getVersion());
   registerProjector(devUrl, () => win);
   sources = registerSources(() => win);
+  control = registerControl(() => win, () => kiosk, app.getPath("userData"));
   createAppMenu();
   createTray();
   win = createWindow();

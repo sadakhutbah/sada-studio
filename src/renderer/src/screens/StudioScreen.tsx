@@ -18,6 +18,7 @@ import { fill, fr } from "../strings";
 import { t } from "@core/messages";
 import { Brand, Btn, Card, ErrorBox, Field, inputClass, Kicker, StatusPill, Title, type PillKey } from "../ui";
 import { bridge } from "../bridge";
+import { runControlAction, type ControlContext } from "../control-actions";
 import { useLocalSources } from "../local-sources";
 import { RegiePanel } from "../components/RegiePanel";
 import { RegiePreviewLayer } from "../components/RegiePreviewLayer";
@@ -59,6 +60,15 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
       if (e) setMuteError(`${fr.regie.muteFailed} ${e.message}`.trim());
     });
   };
+  // Shortcuts and the local API: the main process asks this window to run an action; the answer says what the screen shows now.
+  const controlContext = useRef<ControlContext | null>(null);
+  useEffect(
+    () =>
+      window.studio.control.onRequest((request) =>
+        controlContext.current ? runControlAction(request, controlContext.current) : { ok: false, code: "ui_unavailable", message: t("control.uiUnavailable") },
+      ),
+    [],
+  );
   const now = useNow(true);
   const video = useRef<HTMLVideoElement>(null);
   const [regieView, setRegieView] = useState<RegieLiveView | null>(null);
@@ -110,6 +120,23 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
     browser: { saved: prefs.browserSource, onPersist: persistBrowser },
     screen: { saved: prefs.lastScreen, onPersist: persistScreen },
     audio: { saved: prefs.audioMix, onPersist: persistAudio },
+  });
+
+  useEffect(() => {
+    controlContext.current = {
+      mic: {
+        muted: () => mixer.isMuted(),
+        set: async (target) => {
+          if (mixer.isMuted() === target) return null;
+          setMuteError(null);
+          const e = await toggleMuteSynced(mixer, bridge.regie.setMute);
+          if (e) setMuteError(`${fr.regie.muteFailed} ${e.message}`.trim());
+          return e ? e.message : null;
+        },
+      },
+      browser: local.control.browser,
+      screen: local.control.screen,
+    };
   });
 
   const { view: capture, audioInputs, refreshAudioInputs } = useCapture();

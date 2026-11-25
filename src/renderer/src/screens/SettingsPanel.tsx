@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CalibrationView, CaptureSettings, CaptureView } from "@core/capture/settings";
 import type { AudioSettings } from "@core/sources/types";
+import { ControlSettings } from "../components/ControlSettings";
 import { IpCameraSettings } from "./IpCameraSettings";
 import { CalibrationWizard, DelayStepper } from "./SyncControls";
 import type { Prefs } from "../prefs";
@@ -186,6 +187,8 @@ export function SettingsPanel({
             </div>
           </Card>
           )}
+
+          <ControlSettings />
         </div>
         <div className="mt-4 flex justify-end">
           <Btn variante="ghost" onClick={onClose}>

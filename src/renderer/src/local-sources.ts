@@ -10,6 +10,7 @@ import type { RoutingSource } from "@core/sources/routing";
 import type { ScreenAudioSupport } from "@core/sources/screen-audio";
 import type { BrowserSourceConfig, BrowserSourceStatus, DesktopSourceInfo } from "@core/sources/types";
 import { bridge } from "./bridge";
+import type { ControlContext } from "./control-actions";
 import type { LocalSourcesProps } from "./components/LocalSources";
 import type { Prefs } from "./prefs";
 import { fr } from "./strings";
@@ -25,6 +26,8 @@ export interface LocalSourcesState {
   /** The programme is the shared screen or window (chosen and switched on). */
   screenActive: boolean;
   screenSourceId: string;
+  /** What shortcuts and the local API drive (state read when the action runs, not when the screen was drawn). */
+  control: Pick<ControlContext, "browser" | "screen">;
   /** The system sound can be asked for with the share (Windows): put in the source options. */
   screenSystemAudio: boolean;
   /** The shared screen could not be captured: it is switched off and the message shown. */
@@ -230,6 +233,49 @@ export function useLocalSources({ compositor, source, mix, browser: browserPrefs
     };
   }, [remember]);
 
+  // Switching the share on checks the system permission first (macOS); `null` when it is on, the message otherwise.
+  const startScreen = useCallback(async (): Promise<string | null> => {
+    const a = await window.studio.sources.screen.access();
+    if (a === "denied" || a === "restricted") {
+      setDenied(true);
+      setScreenError(t("screen.denied"));
+      return t("screen.denied");
+    }
+    setDenied(false);
+    setScreenError(null);
+    setScreenOn(true);
+    return null;
+  }, []);
+
+  // The values an action sees are the latest ones, not those of the render that created the callback.
+  const latest = useRef({ config, status, screenOn, screenId });
+  useEffect(() => {
+    latest.current = { config, status, screenOn, screenId };
+  });
+  const control = useMemo<LocalSourcesState["control"]>(
+    () => ({
+      browser: {
+        state: () => (!latest.current.status.active ? "none" : latest.current.config.visible ? "shown" : "hidden"),
+        setVisible: (visible) => {
+          setConfig((c) => ({ ...c, visible }));
+          void bridge.sources.browser.setVisible(visible).catch((e) => setBrowserError(messageOf(e)));
+        },
+      },
+      screen: {
+        on: () => latest.current.screenOn,
+        hasSource: () => latest.current.screenId !== "",
+        set: async (on) => {
+          if (!on) {
+            setScreenOn(false);
+            return null;
+          }
+          return startScreen();
+        },
+      },
+    }),
+    [startScreen],
+  );
+
   const props = useMemo<LocalSourcesProps>(
     () => ({
       browser: {
@@ -277,22 +323,13 @@ export function useLocalSources({ compositor, source, mix, browser: browserPrefs
         onToggle: () => {
           if (screenOn) return setScreenOn(false);
           if (!screenId) return;
-          void window.studio.sources.screen.access().then((a) => {
-            if (a === "denied" || a === "restricted") {
-              setDenied(true);
-              setScreenError(t("screen.denied"));
-            } else {
-              setDenied(false);
-              setScreenError(null);
-              setScreenOn(true);
-            }
-          });
+          void startScreen();
         },
         onOpenSettings: () => void window.studio.sources.screen.openSettings(),
       },
     }),
-    [config, status, browserError, start, screenOn, screenId, sources, loading, screenError, denied, suggestPick, refresh, remember, mixSettings, setMixInput, audioSupport, pageAudioError],
+    [config, status, browserError, start, screenOn, screenId, sources, loading, screenError, denied, suggestPick, refresh, remember, mixSettings, setMixInput, audioSupport, pageAudioError, startScreen],
   );
 
-  return { props, browserVisible, screenActive: screenOn && screenId !== "", screenSourceId: screenId, screenSystemAudio: audioSupport.supported, failScreen };
+  return { props, browserVisible, screenActive: screenOn && screenId !== "", screenSourceId: screenId, screenSystemAudio: audioSupport.supported, control, failScreen };
 }

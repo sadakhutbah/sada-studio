@@ -67,6 +67,11 @@ export function isDesktopSourceId(v: unknown): v is string {
   return typeof v === "string" && /^(screen|window):[\w.:-]{1,60}$/.test(v);
 }
 
+/** Channels of the shortcuts and the local control API: the settings view, and the window answering the requests. */
+export const CONTROL_INVOKE_CHANNELS = ["control:get", "control:set-shortcut", "control:set-api", "control:regenerate-token", "control:copy-token"] as const;
+export const CONTROL_SEND_CHANNELS = ["control:response"] as const;
+export const CONTROL_EVENT_CHANNELS = ["control:request"] as const;
+
 /** Channels of the local sources (web source, screen share): the only ones the UI may use for them. */
 export const SOURCE_INVOKE_CHANNELS = [
   "sources:browser-status",
