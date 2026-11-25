@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@core/errors";
 import { t } from "@core/messages";
 import { DEFAULT_BROWSER_SOURCE } from "@core/sources/browser-source";
 import type { StudioSceneCompositor } from "@core/sources/compositor";
+import { findRemembered, rememberedFrom, type RememberedScreen } from "@core/sources/remembered";
 import type { RoutingSource } from "@core/sources/routing";
 import type { BrowserSourceConfig, BrowserSourceStatus, DesktopSourceInfo } from "@core/sources/types";
 import { bridge } from "./bridge";
@@ -34,6 +35,8 @@ export function useLocalSources(
   source: RoutingSource,
   saved: Prefs["browserSource"],
   onPersist: (b: Prefs["browserSource"]) => void,
+  savedScreen: RememberedScreen | null = null,
+  onPersistScreen: (s: RememberedScreen) => void = () => undefined,
 ): LocalSourcesState {
   const [config, setConfig] = useState<BrowserSourceConfig>({ ...DEFAULT_BROWSER_SOURCE, ...saved, visible: false });
   const [status, setStatus] = useState<BrowserSourceStatus>(IDLE);
@@ -45,6 +48,9 @@ export function useLocalSources(
   const [loading, setLoading] = useState(false);
   const [screenError, setScreenError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
+  // Last shared screen: read once at launch, then kept up to date with the operator's choices.
+  const remembered = useRef<RememberedScreen | null>(savedScreen);
+  const [suggestPick, setSuggestPick] = useState(false);
 
   // The main process owns the hidden window: follow it, and adopt it when the UI was reloaded under it.
   useEffect(() => {
@@ -103,12 +109,26 @@ export function useLocalSources(
 
   useEffect(() => source.onRecoverableEnded(() => failScreen(fr.regie.screenEnded)), [source, failScreen]);
 
+  const remember = useCallback(
+    (s: DesktopSourceInfo) => {
+      remembered.current = rememberedFrom(s);
+      onPersistScreen(remembered.current);
+    },
+    [onPersistScreen],
+  );
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setScreenError(null);
     setDenied(false);
     try {
-      setSources(await bridge.sources.screen.list());
+      const list = await bridge.sources.screen.list();
+      setSources(list);
+      // A window's id changes when it is reopened: follow the remembered one by its name when the chosen id vanished.
+      setScreenId((current) => {
+        if (!current || list.some((s) => s.id === current)) return current;
+        return findRemembered(remembered.current, list)?.id ?? current;
+      });
     } catch (e) {
       setScreenError(messageOf(e));
       setDenied(e instanceof ApiError && e.code === "screen_denied");
@@ -116,6 +136,36 @@ export function useLocalSources(
       setLoading(false);
     }
   }, []);
+
+  // At launch, offer the last shared screen again: chosen if it still exists (sharing itself stays off until the operator
+  // switches it on: nothing goes on air by itself), otherwise the picker opens. The list is only read when the system
+  // already allows it, so that no permission prompt appears at startup.
+  useEffect(() => {
+    const last = remembered.current;
+    if (!last) return;
+    let alive = true;
+    void (async () => {
+      try {
+        if ((await window.studio.sources.screen.access()) !== "granted") return;
+        const list = await bridge.sources.screen.list();
+        if (!alive) return;
+        setSources(list);
+        const found = findRemembered(last, list);
+        if (found) {
+          setScreenId(found.id);
+          if (found.id !== last.id) remember(found);
+        } else {
+          setScreenError(t("screen.gone"));
+          setSuggestPick(true);
+        }
+      } catch {
+        /* no list at launch (no permission, no screen): the operator picks later */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [remember]);
 
   const props = useMemo<LocalSourcesProps>(
     () => ({
@@ -144,9 +194,13 @@ export function useLocalSources(
         error: screenError,
         denied,
         onRefresh: () => void refresh(),
+        suggestPick,
         onSelect: (id) => {
           setScreenId(id);
           setScreenError(null);
+          setSuggestPick(false);
+          const picked = sources.find((s) => s.id === id);
+          if (picked) remember(picked);
         },
         onToggle: () => {
           if (screenOn) return setScreenOn(false);
@@ -165,7 +219,7 @@ export function useLocalSources(
         onOpenSettings: () => void window.studio.sources.screen.openSettings(),
       },
     }),
-    [config, status, browserError, start, screenOn, screenId, sources, loading, screenError, denied, refresh],
+    [config, status, browserError, start, screenOn, screenId, sources, loading, screenError, denied, suggestPick, refresh, remember],
   );
 
   return { props, browserVisible, screenActive: screenOn && screenId !== "", screenSourceId: screenId, failScreen };

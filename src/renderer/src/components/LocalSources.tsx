@@ -39,6 +39,8 @@ export interface ScreenShareControls {
   error: string | null;
   /** macOS refused the screen recording: the message comes with a button to the system settings. */
   denied: boolean;
+  /** The remembered source is gone: open the list to pick another one. */
+  suggestPick?: boolean;
   onRefresh: () => void;
   onSelect: (sourceId: string) => void;
   onToggle: () => void;
@@ -189,8 +191,14 @@ function BrowserSourceRow({ config, status, error, onAdd, onRemove, onReload, on
   );
 }
 
-function ScreenShareRow({ active, sourceId, sources, loading, error, denied, onRefresh, onSelect, onToggle, onOpenSettings }: ScreenShareControls) {
+function ScreenShareRow({ active, sourceId, sources, loading, error, denied, suggestPick, onRefresh, onSelect, onToggle, onOpenSettings }: ScreenShareControls) {
   const [open, setOpen] = useState(false);
+  const [suggested, setSuggested] = useState(false);
+  // The remembered source no longer exists: the picker opens by itself, once (its list is already loaded).
+  if (suggestPick && !suggested) {
+    setSuggested(true);
+    setOpen(true);
+  }
   const chosen = sources.find((s) => s.id === sourceId);
   const toggleList = () => {
     if (!open) onRefresh();

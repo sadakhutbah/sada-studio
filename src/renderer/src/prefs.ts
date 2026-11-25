@@ -1,4 +1,5 @@
 import { DEFAULT_BROWSER_SOURCE, normalizeBrowserSourceConfig } from "@core/sources/browser-source";
+import { normalizeRememberedScreen, type RememberedScreen } from "@core/sources/remembered";
 import { DEFAULT_AUDIO, type AudioSettings, type BrowserSourceLayout } from "@core/sources/types";
 import { normalizeDelay } from "@core/capture/types";
 import type { StreamKind } from "@core/api/types";
@@ -20,6 +21,8 @@ export interface Prefs {
   projectorDisplay: number | null;
   /** Last web source: address and layout (it is never shown by itself at startup). */
   browserSource: BrowserSourceLayout & { url: string };
+  /** Last screen or window shared: offered again at the next launch if it still exists. */
+  lastScreen: RememberedScreen | null;
 }
 
 const pickBrowser = (c: Partial<BrowserSourceLayout & { url: string }> | null | undefined) => {
@@ -28,13 +31,13 @@ const pickBrowser = (c: Partial<BrowserSourceLayout & { url: string }> | null | 
 };
 
 const KEY = "sada-studio.prefs";
-const DEFAULTS: Prefs = { kind: "khutba", title: "", videoDeviceId: "", audioDeviceId: "", audio: DEFAULT_AUDIO, webcamDelays: {}, instance: "", projectorAuto: true, projectorDisplay: null, browserSource: pickBrowser(DEFAULT_BROWSER_SOURCE) };
+const DEFAULTS: Prefs = { kind: "khutba", title: "", videoDeviceId: "", audioDeviceId: "", audio: DEFAULT_AUDIO, webcamDelays: {}, instance: "", projectorAuto: true, projectorDisplay: null, browserSource: pickBrowser(DEFAULT_BROWSER_SOURCE), lastScreen: null };
 
 /** Non-secret preferences, kept in the UI's local storage. */
 export function loadPrefs(): Prefs {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? "{}") as Partial<Prefs>;
-    return { ...DEFAULTS, ...raw, audio: { ...DEFAULT_AUDIO, ...raw.audio }, webcamDelays: { ...raw.webcamDelays }, browserSource: pickBrowser(raw.browserSource) };
+    return { ...DEFAULTS, ...raw, audio: { ...DEFAULT_AUDIO, ...raw.audio }, webcamDelays: { ...raw.webcamDelays }, browserSource: pickBrowser(raw.browserSource), lastScreen: normalizeRememberedScreen(raw.lastScreen) };
   } catch {
     return DEFAULTS;
   }

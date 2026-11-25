@@ -86,7 +86,14 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
       return next;
     });
   }, []);
-  const local = useLocalSources(compositor, source, prefs.browserSource, persistBrowser);
+  const persistScreen = useCallback((s: Prefs["lastScreen"]) => {
+    setPrefs((p) => {
+      const next = { ...p, lastScreen: s };
+      savePrefs(next);
+      return next;
+    });
+  }, []);
+  const local = useLocalSources(compositor, source, prefs.browserSource, persistBrowser, prefs.lastScreen, persistScreen);
 
   const { view: capture, audioInputs, refreshAudioInputs } = useCapture();
   const ipMode = capture?.settings.sourceKind === "ip-camera";

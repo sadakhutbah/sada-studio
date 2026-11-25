@@ -11,6 +11,8 @@
 
 ### Changed
 
+- The last shared screen or window is remembered. At the next launch it is selected again if it still exists (a window is found again by its name when the system gave it a new id, unless two windows share that name); otherwise the list opens so another one can be picked. Sharing itself stays off until the operator switches it on, and the list is only read at launch when the system already allows screen recording (no permission prompt at startup).
+
 - The scene canvas is only used while a web source or a shared screen is shown; otherwise the camera stream is sent untouched. Drawing is driven by a timer, so it no longer freezes when the window is hidden in the notification area.
 - Web source frames travel as raw pixels, at most 15 per second, scaled down to 1280×720 at most, one at a time (a frame is dropped if the previous one has not been consumed): no PNG encoding on the main process.
 
