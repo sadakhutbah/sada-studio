@@ -59,6 +59,37 @@ describe("setup mode: client", () => {
     expect(c[4].url).toBe(`${BASE}/api/v1/studio/live/status`); // the live is addressed again
   });
 
+  it("an enter() answered after leave() is ignored: the live stays addressed", async () => {
+    const queue: Array<(r: Response) => void> = [];
+    const calls: string[] = [];
+    const fetchFn = vi.fn((url: string) => {
+      calls.push(String(url));
+      return new Promise<Response>((resolve) => queue.push(resolve));
+    });
+    const a = new SadaHttpApi({ fetch: fetchFn as unknown as typeof fetch });
+    a.useDevice({ baseUrl: BASE, deviceId: "d1", deviceSecret: "sdev_secret", mosque: { name: "M" } });
+    const json = (o: unknown) => new Response(JSON.stringify(o), { status: 200, headers: { "content-type": "application/json" } });
+    const entering = a.setup.enter();
+    const leaving = a.setup.leave();
+    queue[1]!(json({ active: false })); // leave answered first
+    await leaving;
+    queue[0]!(json({ active: true, expires_in: 90, orchestrator: "ready" })); // the stale enter comes back late
+    await expect(entering).rejects.toMatchObject({ code: "setup_stale" });
+    const status = a.getLiveStatus();
+    expect(calls.at(-1)).toBe(`${BASE}/api/v1/studio/live/status`); // no ?setup=1
+    queue[2]!(json({}));
+    await status;
+  });
+
+  it("a second enter() after leave() works normally", async () => {
+    const { a, calls } = api([{ json: { active: true } }, { json: {} }, { json: { active: true } }, { json: {} }]);
+    await a.setup.enter();
+    await a.setup.leave();
+    await a.setup.enter();
+    await a.getLiveStatus();
+    expect(calls[3].url).toBe(`${BASE}/api/v1/studio/live/status?setup=1`);
+  });
+
   it("marks overlays, mute and transition too, and nothing when the mode is closed", async () => {
     const { a, calls } = api([{ json: { active: true, orchestrator: "ready" } }, {}, {}, {}, {}, {}, {}].map((r) => ({ json: r })) as never);
     await a.setLiveOverlay("qr", { visible: false });

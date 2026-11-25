@@ -71,6 +71,8 @@ export class SadaHttpApi implements StudioApi {
   private device: DeviceCredentials | null = null;
   /** The setup view is open: Régie reads and commands then address the rehearsal programme, never the live. */
   private setupMode = false;
+  /** Bumped by every `leave()`: an `enter()` answered after a `leave()` belongs to an older generation and is ignored. */
+  private setupGeneration = 0;
 
   constructor(options: SadaApiOptions = {}) {
     this.doFetch = options.fetch ?? ((...a) => fetch(...a));
@@ -205,11 +207,17 @@ export class SadaHttpApi implements StudioApi {
    */
   readonly setup = {
     enter: async (): Promise<SetupState> => {
+      const generation = this.setupGeneration;
       const d = await this.json<Record<string, unknown>>("POST", `${API}/studio/setup`, { json: { on: true }, device: true });
+      if (generation !== this.setupGeneration) {
+        // `leave()` ran while this call was in flight: never switch back to the rehearsal (any lease left server-side lapses by itself).
+        throw new ApiError(0, t("setup.lapsed"), "setup_stale");
+      }
       this.setupMode = true;
       return normalizeSetup(d);
     },
     leave: async (): Promise<void> => {
+      this.setupGeneration++;
       this.setupMode = false; // the live is addressed again whatever the server answers
       await this.json("POST", `${API}/studio/setup`, { json: { on: false }, device: true });
     },
@@ -396,61 +404,4 @@ export function normalizeReply(d: Record<string, unknown>): HeartbeatReply {
   const reply: HeartbeatReply = { config: cfg, schedule, command: d.command === "live" ? "live" : "idle", current };
   if (credentials) reply.credentials = credentials;
   return reply;
-}
-
-/** Lightweight regie client authenticated with X-Sada-Studio-Token. */
-export class SadaApiClient {
-  private readonly baseUrl: string;
-  private readonly doFetch: typeof fetch;
-
-  constructor(baseUrl: string, private readonly studioToken: string, fetchImpl?: typeof fetch) {
-    this.baseUrl = normalizeBaseUrl(baseUrl);
-    this.doFetch = fetchImpl ?? ((...a) => fetch(...a));
-  }
-
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const headers: Record<string, string> = {
-      Accept: "application/json",
-      "X-Sada-Studio-Token": this.studioToken,
-    };
-    if (body !== undefined) headers["Content-Type"] = "application/json";
-    const res = await this.doFetch(`${this.baseUrl}${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-    if (!res.ok) {
-      const msg = (data && (data.message || data.error)) || t("api.httpError", { status: res.status });
-      throw new ApiError(res.status, String(msg));
-    }
-    return data as T;
-  }
-
-  getRegie(): Promise<RegieData> {
-    return this.request<RegieData>("GET", `${API}/studio/regie`);
-  }
-
-  getLiveStatus(): Promise<LiveStatus> {
-    return this.request<LiveStatus>("GET", `${API}/studio/live/status`);
-  }
-
-  sendLiveCommand(command: string, arg?: string, transition?: TransitionMode): Promise<LiveStatus> {
-    const body: Record<string, unknown> = { command };
-    if (arg !== undefined) body.arg = arg;
-    if (transition !== undefined) body.transition = transition;
-    return this.request<LiveStatus>("POST", `${API}/studio/live/command`, body);
-  }
-
-  setTransition(mode: TransitionMode): Promise<{ ok: boolean; transition: TransitionMode }> {
-    return this.request<{ ok: boolean; transition: TransitionMode }>("POST", `${API}/studio/live/transition`, { mode });
-  }
-
-  setMute(muted: boolean): Promise<{ ok: boolean; muted: boolean; mic_muted: boolean }> {
-    return this.request<{ ok: boolean; muted: boolean; mic_muted: boolean }>("POST", `${API}/live/regie/mute`, { muted });
-  }
-
-  setLiveOverlay(kind: OverlayKind, payload: Record<string, unknown>): Promise<OverlayUpdateResponse> {
-    return this.request<OverlayUpdateResponse>("PATCH", `${API}/studio/live/overlays/${encodeURIComponent(kind)}`, payload);
-  }
 }
