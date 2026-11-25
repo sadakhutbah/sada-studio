@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StreamKind } from "@core/api/types";
 import { meterPosition } from "@core/audio/meter";
+import { InputAudioMixer } from "@core/audio/mixer";
 import { formatCountdown, formatWhen } from "@core/kiosk/format";
 import { isActive } from "@core/session/machine";
 import type { SourceOptions } from "@core/sources/types";
@@ -15,6 +16,8 @@ import { loadPrefs, savePrefs, webcamDelayOf, webcamPairKey, type Prefs } from "
 import { fill, fr } from "../strings";
 import { t } from "@core/messages";
 import { Brand, Btn, Card, ErrorBox, Field, inputClass, Kicker, StatusPill, Title, type PillKey } from "../ui";
+import { bridge } from "../bridge";
+import { RegiePanel } from "../components/RegiePanel";
 import { HealthPanel } from "./HealthPanel";
 import { ProjectorPanel } from "./ProjectorPanel";
 import { SettingsPanel } from "./SettingsPanel";
@@ -31,6 +34,19 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   const [captureTry, setCaptureTry] = useState(0);
   const { cameras, microphones } = useDevices(stream);
   const level = useLevel(stream);
+  // Incoming-audio mute: tracks are enabled/disabled live, without touching the transport.
+  const mixer = useMemo(() => new InputAudioMixer(), []);
+  const [muted, setMuted] = useState(false);
+  useEffect(() => mixer.subscribe(setMuted), [mixer]);
+  useEffect(() => {
+    if (stream) mixer.mix([stream]);
+  }, [mixer, stream]);
+  useEffect(() => () => mixer.dispose(), [mixer]);
+  const toggleMute = () => {
+    const next = mixer.toggleMute();
+    // Best effort: the orchestrator mirrors the state so the web Régie shows it too.
+    void bridge.regie.setMute(next).catch(() => undefined);
+  };
   const now = useNow(true);
   const video = useRef<HTMLVideoElement>(null);
   const [confirmStop, setConfirmStop] = useState(false);
@@ -286,6 +302,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
               </div>
             )}
           </Card>
+          <RegiePanel audio={{ level, muted, onToggleMute: toggleMute }} />
           <ProjectorPanel stream={stream} onAir={onAir} prefs={prefs} setPrefs={update} />
           {kiosk.stopPending && <p className="m-0 text-[0.85rem] text-muted">{fr.stop.pending}</p>}
           {state.status === "error" && state.error && state.errorCode !== "conflict" && <ErrorBox>{state.error}</ErrorBox>}

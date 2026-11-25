@@ -10,3 +10,4 @@ dist
 
 # ffmpeg fetched for the Windows installer (scripts/fetch-ffmpeg-win.mjs)
 /build/ffmpeg/
+graphify-out/

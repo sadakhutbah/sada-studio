@@ -98,6 +98,68 @@ export interface StreamMeta {
   title: string;
 }
 
+export type TransitionMode = "fade" | "cut";
+export type OverlayCorner = "tl" | "tr" | "bl" | "br";
+export type OverlayKind = "qr" | "banner" | "logo";
+
+export interface LiveOverlays {
+  qr: { visible: boolean; url: string; label: string; corner: OverlayCorner };
+  banner: { visible: boolean; title: string; subtitle: string };
+  logo: { visible: boolean };
+}
+
+export interface LiveStatus {
+  reachable?: boolean;
+  ok?: boolean;
+  state?: string;
+  scene?: string;
+  override?: boolean;
+  transition?: TransitionMode;
+  overlays?: LiveOverlays;
+  mic?: boolean;
+  mic_muted?: boolean;
+  audio_level_db?: number | null;
+  message?: string;
+}
+
+export interface RegieScene {
+  id: string;
+  kind: "camera" | "slate" | "custom";
+  label: string;
+  custom?: boolean;
+  category?: string;
+  slug?: string;
+  preview_url?: string;
+}
+
+export interface RegieAudioState {
+  mic_on: boolean;
+  muted: boolean;
+  level_db: number | null;
+}
+
+export interface RegieData {
+  mosque?: string;
+  slug?: string;
+  status: LiveStatus;
+  transition?: TransitionMode;
+  scenes?: RegieScene[];
+  audio?: RegieAudioState;
+  commands?: string[];
+  extend_minutes?: string[];
+  overlays?: LiveOverlays;
+}
+
+export interface OverlayUpdateResponse {
+  ok: boolean;
+  overlays: LiveOverlays;
+}
+
+export interface StudioConfigResponse {
+  mosque: MosqueInfo;
+  config?: Record<string, unknown>;
+}
+
 export interface PairingApi {
   /** `machineName`: computer name, suggested to the console as the device name. */
   start(baseUrl: string, machineName?: string): Promise<PairingChallenge>;

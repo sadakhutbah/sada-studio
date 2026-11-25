@@ -1,4 +1,4 @@
-import type { StreamMeta } from "../core/api/types";
+import type { LiveStatus, OverlayKind, OverlayUpdateResponse, RegieData, StreamMeta, TransitionMode } from "../core/api/types";
 import type { CalibrationView, CaptureSettings, CaptureView } from "../core/capture/settings";
 import type { WindowsFacts } from "../core/health/health";
 import type { ClientReport, KioskView } from "../core/kiosk/supervisor";
@@ -88,6 +88,14 @@ export interface StudioBridge {
   whipOffer(sdp: string): Promise<IpcResult<{ answer: string; resource: string }>>;
   whipPatch(resource: string, fragment: string): Promise<IpcResult<null>>;
   whipClose(resource: string): Promise<IpcResult<null>>;
+  regie: {
+    get(): Promise<IpcResult<RegieData>>;
+    status(): Promise<IpcResult<LiveStatus>>;
+    command(cmd: string, arg?: string, transition?: TransitionMode): Promise<IpcResult<LiveStatus>>;
+    setTransition(mode: TransitionMode): Promise<IpcResult<{ ok: boolean; transition: TransitionMode }>>;
+    setMute(muted: boolean): Promise<IpcResult<{ ok: boolean; muted: boolean; mic_muted: boolean }>>;
+    setOverlay(kind: OverlayKind, payload: Record<string, unknown>): Promise<IpcResult<OverlayUpdateResponse>>;
+  };
 }
 
 declare global {
