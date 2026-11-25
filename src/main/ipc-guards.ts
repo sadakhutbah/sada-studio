@@ -1,4 +1,6 @@
 import type { OverlayCorner, OverlayKind, TransitionMode } from "../core/api/types";
+import { t } from "../core/messages";
+import { validateBrowserSourceUrl } from "../core/sources/browser-source";
 
 /** Validation of what the renderer sends over IPC: the main process holds the device secret, so it trusts nothing. */
 
@@ -53,3 +55,31 @@ export function parseOverlay(kind: unknown, payload: unknown): { kind: OverlayKi
   if (!str(p.url, 512) || !str(p.label, 60) || !CORNERS.includes(p.corner as OverlayCorner)) return null;
   return { kind, payload: { visible: p.visible, url: p.url, label: p.label, corner: p.corner } };
 }
+
+/** Web source address from the UI: a string, valid and public (throws the message the UI shows). */
+export function parseBrowserSourceUrl(v: unknown): string {
+  if (typeof v !== "string") throw new Error(t("ipc.invalidSource"));
+  return validateBrowserSourceUrl(v);
+}
+
+/** Id of a screen or window as `desktopCapturer` gives it (`screen:0:0`, `window:1234:0`). */
+export function isDesktopSourceId(v: unknown): v is string {
+  return typeof v === "string" && /^(screen|window):[\w.:-]{1,60}$/.test(v);
+}
+
+/** Channels of the local sources (web source, screen share): the only ones the UI may use for them. */
+export const SOURCE_INVOKE_CHANNELS = [
+  "sources:browser-status",
+  "sources:browser-start",
+  "sources:browser-reload",
+  "sources:browser-set-visible",
+  "sources:browser-stop",
+  "sources:screen-access",
+  "sources:screen-list",
+  "sources:screen-select",
+  "sources:screen-open-settings",
+] as const;
+/** One-way UI -> main. */
+export const SOURCE_SEND_CHANNELS = ["sources:browser-frame-ack"] as const;
+/** Main -> UI. */
+export const SOURCE_EVENT_CHANNELS = ["sources:browser-frame", "sources:browser-status-changed"] as const;

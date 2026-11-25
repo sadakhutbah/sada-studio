@@ -1,6 +1,6 @@
 /**
- * Planned extension points, deliberately not implemented in this version.
- * They fix the shape these features will take so the session does not have to change.
+ * Extension points: the shape of the features that plug into the session without changing it.
+ * The scene compositor is implemented (`sources/compositor.ts`); audio mixing is partly (`audio/mixer.ts`).
  */
 
 /** Audio mixing (several microphones, music, return feed): sits between the sources and the transport. */
@@ -10,12 +10,12 @@ export interface AudioMixer {
   dispose(): void;
 }
 
-/** Scenes (framing, banner, several sources): produces the final video stream. */
+/** Scenes (web source and shared screen over the camera): produces the final video stream. */
 export interface SceneCompositor {
   readonly sceneId: string;
   compose(inputs: MediaStream[]): MediaStream;
   dispose(): void;
 }
 
-// Screen sharing: a `MediaSourceStrategy` with id "screen", to register in `SourceRegistry`.
+// Screen sharing: a `MediaSourceStrategy` with id "screen" (`sources/screen.ts`), registered in `SourceRegistry`.
 // SRT transport: a `Transport` of `kind` "srt", provided to `BroadcastSession` by its `TransportFactory`.

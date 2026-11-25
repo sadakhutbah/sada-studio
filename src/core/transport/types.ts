@@ -22,6 +22,8 @@ export interface Transport {
   /** Called at most once when the transport loses the link after having been connected. */
   onLost(cb: (reason: string) => void): void;
   getStats(): Promise<TransportStats>;
+  /** Sends the tracks of `stream` instead of the current ones, on the same connection (no renegotiation). */
+  replaceTracks?(stream: MediaStream): Promise<void>;
   close(): Promise<void>;
 }
 

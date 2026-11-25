@@ -1,4 +1,8 @@
+import { t } from "../messages";
 import type { MediaSourceStrategy, SourceOptions } from "./types";
+
+/** What the screen source needs from `navigator.mediaDevices`. `getDisplayMedia` is absent in some embedders. */
+export type ScreenMediaDevices = Pick<MediaDevices, "getUserMedia"> & Partial<Pick<MediaDevices, "getDisplayMedia">>;
 
 interface DesktopVideoConstraints {
   mandatory: {
@@ -21,9 +25,11 @@ function optionsKey(o: SourceOptions): string {
 }
 
 /**
- * Screen / window capture strategy backed by Electron's desktopCapturer source ids.
- * Registered in SourceRegistry under id "screen" (see src/core/extension-points.ts).
- * Optionally mixes the configured local microphone so the speaker remains audible.
+ * Screen / window capture strategy. The source is chosen by the operator in the UI; before capturing, `select` tells the
+ * main process which one (it answers `getDisplayMedia` through `setDisplayMediaRequestHandler`, so the page never picks
+ * a screen by itself). Falls back to the legacy desktop constraint with the same source id when `getDisplayMedia`
+ * refuses (it wants a user gesture, which an automatic restart does not have).
+ * Registered in SourceRegistry under id "screen". Optionally mixes the local microphone so the speaker stays audible.
  */
 export class ScreenSource implements MediaSourceStrategy {
   readonly id = "screen";
@@ -31,16 +37,19 @@ export class ScreenSource implements MediaSourceStrategy {
   private ownedStreams: MediaStream[] = [];
   private key: string | null = null;
   private listeners = new Set<() => void>();
-  private readonly mediaDevices: Pick<MediaDevices, "getUserMedia"> | null;
+  private readonly mediaDevices: ScreenMediaDevices | null;
 
-  constructor(mediaDevices?: Pick<MediaDevices, "getUserMedia">) {
+  constructor(
+    mediaDevices?: ScreenMediaDevices,
+    private readonly select?: (sourceId: string) => Promise<void>,
+  ) {
     this.mediaDevices = mediaDevices ?? null;
   }
 
   async acquire(options: SourceOptions): Promise<MediaStream> {
     const sourceId = options.screen?.sourceId?.trim();
     if (!sourceId) {
-      throw new Error("Aucune source d'écran ou de fenêtre sélectionnée.");
+      throw new Error(t("screen.noSource"));
     }
 
     const k = optionsKey(options);
@@ -61,10 +70,7 @@ export class ScreenSource implements MediaSourceStrategy {
       },
     };
 
-    const screenStream = await devices.getUserMedia({
-      audio: false,
-      video: videoConstraint as unknown as MediaTrackConstraints,
-    });
+    const screenStream = await this.captureScreen(devices, sourceId, videoConstraint, options);
     this.ownedStreams.push(screenStream);
 
     const tracks: MediaStreamTrack[] = [...screenStream.getVideoTracks()];
@@ -95,6 +101,34 @@ export class ScreenSource implements MediaSourceStrategy {
     this.stream = combined;
     this.key = k;
     return combined;
+  }
+
+  private async captureScreen(
+    devices: ScreenMediaDevices,
+    sourceId: string,
+    legacy: DesktopVideoConstraints,
+    options: SourceOptions,
+  ): Promise<MediaStream> {
+    await this.select?.(sourceId);
+    if (devices.getDisplayMedia) {
+      try {
+        return await devices.getDisplayMedia({
+          audio: false,
+          video: {
+            width: { max: options.video?.width ?? 1920 },
+            height: { max: options.video?.height ?? 1080 },
+            frameRate: { max: options.video?.frameRate ?? 30 },
+          },
+        });
+      } catch {
+        // Falls through to the source id the operator picked.
+      }
+    }
+    try {
+      return await devices.getUserMedia({ audio: false, video: legacy as unknown as MediaTrackConstraints });
+    } catch (e) {
+      throw new Error(e instanceof Error && e.message ? e.message : t("screen.failed"), { cause: e });
+    }
   }
 
   release(): void {

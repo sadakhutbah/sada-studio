@@ -47,7 +47,7 @@ export function useBroadcast() {
   const broadcast = useMemo(() => createBroadcast(), []);
   const [snapshot, setSnapshot] = useState<SessionSnapshot>(broadcast.session.snapshot);
   useEffect(() => broadcast.session.subscribe(setSnapshot), [broadcast]);
-  useEffect(() => () => broadcast.source.release(), [broadcast]);
+  useEffect(() => () => broadcast.composited.release(), [broadcast]);
   return { ...broadcast, snapshot };
 }
 

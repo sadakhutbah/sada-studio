@@ -18,6 +18,7 @@ import { fill, fr } from "../strings";
 import { t } from "@core/messages";
 import { Brand, Btn, Card, ErrorBox, Field, inputClass, Kicker, StatusPill, Title, type PillKey } from "../ui";
 import { bridge } from "../bridge";
+import { useLocalSources } from "../local-sources";
 import { RegiePanel } from "../components/RegiePanel";
 import { RegiePreviewLayer } from "../components/RegiePreviewLayer";
 import { SetupProgramView } from "../components/SetupProgramView";
@@ -31,7 +32,7 @@ import { SettingsPanel } from "./SettingsPanel";
 const kindLabel = (k: StreamKind) => fr.live[k];
 
 export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
-  const { session: live, source, snapshot } = useBroadcast();
+  const { session: live, source, composited, compositor, snapshot } = useBroadcast();
   const { state, stats } = snapshot;
   const active = isActive(state);
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
@@ -76,6 +77,17 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
       return next;
     });
 
+  // Web source and screen share: state held here, controls shown in the Régie panel, media mixed by the compositor.
+  const persistBrowser = useCallback((b: Prefs["browserSource"]) => {
+    setPrefs((p) => {
+      if (JSON.stringify(p.browserSource) === JSON.stringify(b)) return p;
+      const next = { ...p, browserSource: b };
+      savePrefs(next);
+      return next;
+    });
+  }, []);
+  const local = useLocalSources(compositor, source, prefs.browserSource, persistBrowser);
+
   const { view: capture, audioInputs, refreshAudioInputs } = useCapture();
   const ipMode = capture?.settings.sourceKind === "ip-camera";
   const rtspUrl = capture?.settings.rtspUrl ?? "";
@@ -98,14 +110,15 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   };
   const sourceOptions = useMemo<SourceOptions>(
     () => ({
-      sourceKind: ipMode ? "ip-camera" : "camera",
+      sourceKind: local.screenActive ? "screen" : ipMode ? "ip-camera" : "camera",
+      screen: local.screenActive ? { sourceId: local.screenSourceId, includeMic: true } : undefined,
       ipCamera: ipMode ? { rtspUrl, audioDevice } : undefined,
       videoDeviceId: prefs.videoDeviceId || undefined,
       audioDeviceId: prefs.audioDeviceId || undefined,
       audio: prefs.audio,
       audioDelayMs: ipMode ? undefined : webcamDelay,
     }),
-    [ipMode, rtspUrl, audioDevice, prefs.videoDeviceId, prefs.audioDeviceId, prefs.audio, webcamDelay],
+    [local.screenActive, local.screenSourceId, ipMode, rtspUrl, audioDevice, prefs.videoDeviceId, prefs.audioDeviceId, prefs.audio, webcamDelay],
   );
   const setCaptureSettings = (patch: Partial<CaptureSettings>) => {
     if (capture) void window.studio.capture.setSettings({ ...capture.settings, ...patch });
@@ -118,7 +131,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
     if (active || !capture) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    source
+    composited
       .acquire(sourceOptions)
       .then((s) => {
         if (!alive) return;
@@ -129,6 +142,8 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
       .catch((e) => {
         if (!alive) return;
         setStream(null);
+        // A shared screen that cannot be captured is switched off (back to the camera) instead of retried forever.
+        if (sourceOptions.sourceKind === "screen") return local.failScreen(describeMediaError(e));
         setCaptureError(describeMediaError(e));
         timer = setTimeout(() => setCaptureTry((n) => n + 1), captureBackoff.current.next());
       });
@@ -137,7 +152,34 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
       clearTimeout(timer);
     };
     // A re-plugged camera (`cameras.length`) restarts the capture right away, without waiting for the next attempt.
-  }, [sourceOptions, active, source, captureTry, ipMode ? 0 : cameras.length, capture === null]); // eslint-disable-line
+  }, [sourceOptions, active, composited, captureTry, ipMode ? 0 : cameras.length, capture === null]); // eslint-disable-line
+
+  // The stream to send changed (web source or screen shown or hidden): the monitor, level meter and projector follow it.
+  useEffect(() => composited.onStreamChange(setStream), [composited]);
+
+  // What the broadcast carries: raw source stream, or the compositor's canvas as soon as a web source or the shared
+  // screen is shown. While live, the source is swapped first and the output second, both on the open WHIP connection.
+  const previousOptions = useRef(sourceOptions);
+  const { browserVisible, screenActive } = local;
+  useEffect(() => {
+    const demand = { browserVisible, screenActive };
+    const changed = previousOptions.current !== sourceOptions;
+    previousOptions.current = sourceOptions;
+    if (!active || !changed) {
+      composited.setDemand(demand);
+      return;
+    }
+    let alive = true;
+    live
+      .swapSource(sourceOptions)
+      .catch((e) => {
+        if (sourceOptions.sourceKind === "screen") local.failScreen(describeMediaError(e));
+      })
+      .finally(() => alive && composited.setDemand(demand));
+    return () => {
+      alive = false;
+    };
+  }, [browserVisible, screenActive, sourceOptions, active, live, composited]); // eslint-disable-line
 
   // The <video> element is mounted again when the setup view opens or closes: attach the capture to the new one.
   useEffect(() => {
@@ -359,7 +401,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
           {/* Remounted on a mode change: the panel reads the rehearsal's scenes and overlays, or the live's again.
               While the setup mode is being entered it is not mounted: its first read would still address the live. */}
           {(!setup.wanted || setup.state) && (
-            <RegiePanel key={setup.wanted ? "setup" : "live"} onLiveChange={setRegieView} audio={{ level, muted, onToggleMute: toggleMute, error: muteError }} />
+            <RegiePanel key={setup.wanted ? "setup" : "live"} onLiveChange={setRegieView} localSources={local.props} audio={{ level, muted, onToggleMute: toggleMute, error: muteError }} />
           )}
           <ProjectorPanel stream={stream} onAir={onAir} prefs={prefs} setPrefs={update} />
           {kiosk.stopPending && <p className="m-0 text-[0.85rem] text-muted">{fr.stop.pending}</p>}

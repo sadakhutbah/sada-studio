@@ -23,6 +23,19 @@ export const whepSignaling: WhepSignaling = {
 };
 
 export const bridge = {
+  sources: {
+    browser: {
+      status: () => window.studio.sources.browser.status(),
+      start: async (url: string) => unwrap(await window.studio.sources.browser.start(url)),
+      reload: async () => unwrap(await window.studio.sources.browser.reload()),
+      setVisible: async (visible: boolean) => unwrap(await window.studio.sources.browser.setVisible(visible)),
+      stop: async () => unwrap(await window.studio.sources.browser.stop()),
+    },
+    screen: {
+      list: async () => unwrap(await window.studio.sources.screen.list()),
+      select: async (sourceId: string | null) => void unwrap(await window.studio.sources.screen.select(sourceId)),
+    },
+  },
   setup: {
     enter: async () => unwrap(await window.studio.setup.enter()),
     leave: async () => void unwrap(await window.studio.setup.leave()),

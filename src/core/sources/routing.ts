@@ -8,11 +8,17 @@ export class RoutingSource implements MediaSourceStrategy {
   readonly id = "routing";
   private current: string | null = null;
   private readonly endedListeners = new Set<() => void>();
+  private readonly softEndedListeners = new Set<() => void>();
   private offEnded: (() => void) | null = null;
 
+  /**
+   * `recoverable`: kinds whose loss must not fail the live (a shared screen the user stops sharing, a window that
+   * closes). `onRecoverableEnded` tells the UI so it can go back to the camera; `onEnded` stays for the other sources.
+   */
   constructor(
     private readonly sources: Record<string, MediaSourceStrategy>,
     private readonly fallback: string,
+    private readonly recoverable: ReadonlySet<string> = new Set(),
   ) {}
 
   /** Synchronization controls of a source (the webcam's, whatever the current choice: it is the one asked for). */
@@ -31,7 +37,8 @@ export class RoutingSource implements MediaSourceStrategy {
     const source = this.sources[kind]!;
     if (this.current !== kind) {
       this.offEnded?.();
-      this.offEnded = source.onEnded(() => this.endedListeners.forEach((cb) => cb()));
+      const listeners = this.recoverable.has(kind) ? this.softEndedListeners : this.endedListeners;
+      this.offEnded = source.onEnded(() => [...listeners].forEach((cb) => cb()));
       this.current = kind;
     }
     return source.acquire(options);
@@ -48,5 +55,10 @@ export class RoutingSource implements MediaSourceStrategy {
   onEnded(cb: () => void): () => void {
     this.endedListeners.add(cb);
     return () => this.endedListeners.delete(cb);
+  }
+
+  onRecoverableEnded(cb: () => void): () => void {
+    this.softEndedListeners.add(cb);
+    return () => this.softEndedListeners.delete(cb);
   }
 }

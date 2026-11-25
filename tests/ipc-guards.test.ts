@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isResourcePath, parseOverlay, parseRegieCommand } from "../src/main/ipc-guards";
+import { isDesktopSourceId, isResourcePath, parseBrowserSourceUrl, parseOverlay, parseRegieCommand } from "../src/main/ipc-guards";
 
 describe("isResourcePath", () => {
   it.each(["/api/v1/live/studio/whip/sess-1", "/api/v1/studio/setup/whep/abc-123"])("accepts %s", (p) => {
@@ -52,5 +52,26 @@ describe("parseOverlay", () => {
     expect(parseOverlay("logo", { visible: "yes" })).toBeNull();
     expect(parseOverlay("banner", { visible: true, title: "x".repeat(121), subtitle: "" })).toBeNull();
     expect(parseOverlay("qr", { visible: true, url: "u", label: "l", corner: "center" })).toBeNull();
+  });
+});
+
+describe("parseBrowserSourceUrl", () => {
+  it("returns the normalized public address", () => {
+    expect(parseBrowserSourceUrl("cagnotte.example/widget")).toBe("https://cagnotte.example/widget");
+  });
+  it.each(["http://127.0.0.1:8080/", "http://localhost/", "http://192.168.1.1/", "http://169.254.169.254/", "http://[fd00::1]/", "file:///etc/passwd", "", 42, null, { href: "https://a.example" }])(
+    "refuses %j",
+    (v) => {
+      expect(() => parseBrowserSourceUrl(v)).toThrow();
+    },
+  );
+});
+
+describe("isDesktopSourceId", () => {
+  it.each(["screen:0:0", "window:1234:0", "screen:1:0"])("accepts %s", (id) => {
+    expect(isDesktopSourceId(id)).toBe(true);
+  });
+  it.each(["", "screen", "file:///x", "window:../../x", "screen:0:0\n", "x".repeat(100), `window:${"1".repeat(80)}`, null, 3, { id: "screen:0:0" }])("refuses %j", (id) => {
+    expect(isDesktopSourceId(id)).toBe(false);
   });
 });
