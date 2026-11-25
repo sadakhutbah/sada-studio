@@ -43,6 +43,9 @@ const fr = {
   "sup.heartbeatsMissed": "Le serveur Sada n'a pas répondu à {n} battements de suite.",
   "sup.noLongerAuthorized": "{message} Cet appareil n'est plus autorisé : appairez-le de nouveau depuis la console Sada, rubrique Appareils.",
   "ipc.invalidLive": "Type ou titre invalide.",
+  "ipc.invalidResource": "Ressource de diffusion invalide.",
+  "ipc.invalidCommand": "Commande de régie invalide.",
+  "ipc.invalidOverlay": "Incrustation invalide.",
   // Setup mode (programme view)
   "setup.kicker": "Mode réglage",
   "setup.title": "Voir ce qui sera diffusé",
@@ -177,6 +180,9 @@ const en: Record<MessageKey, string> = {
   "sup.heartbeatsMissed": "The Sada server did not answer {n} heartbeats in a row.",
   "sup.noLongerAuthorized": "{message} This device is no longer authorized: pair it again from the Sada console, under Devices.",
   "ipc.invalidLive": "Invalid type or title.",
+  "ipc.invalidResource": "Invalid broadcast resource.",
+  "ipc.invalidCommand": "Invalid Régie command.",
+  "ipc.invalidOverlay": "Invalid overlay.",
   // Setup mode (programme view)
   "setup.kicker": "Setup mode",
   "setup.title": "See what will be broadcast",
