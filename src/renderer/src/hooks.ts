@@ -6,7 +6,11 @@ import { evaluateHealth, toChecks, type HealthItem } from "@core/health/health";
 import type { SessionState } from "@core/session/machine";
 import type { BroadcastSession, SessionSnapshot } from "@core/session/broadcast-session";
 import type { SourceOptions } from "@core/sources/types";
+import type { SetupState } from "@core/api/types";
+import { ApiError } from "@core/errors";
+import { IDLE_LIMIT_MS, isIdle, renewDelayMs, setupPhase, type SetupPhase } from "@core/setup/view";
 import type { KioskSnapshot } from "@shared/ipc";
+import { bridge } from "./bridge";
 import { createBroadcast } from "./studio";
 
 export interface DeviceLists {
@@ -210,4 +214,83 @@ export function useReporter(
     const id = setInterval(send, 10_000);
     return () => clearInterval(id);
   }, [state.status, camera, micro, checks, lastError, startFailure]);
+}
+
+export interface SetupMode {
+  wanted: boolean;
+  state: SetupState | null;
+  error: "server" | "lapsed" | null;
+  /** Shown once after the mode closed by itself (inactivity). */
+  idleClosed: boolean;
+  /** The programme picture reports whether it plays (set by the programme view). */
+  setPlaying: (playing: boolean) => void;
+  phase: SetupPhase;
+  open: () => void;
+  close: () => void;
+}
+
+/**
+ * Setup mode: while open, the lease is renewed (every few seconds, which is also how the answer is polled: the
+ * orchestrator may take a minute to wake). It closes by itself after a long inactivity so the orchestrator can
+ * go back to sleep, and when the window goes away (the server's lease lapses by itself if even that is lost).
+ */
+export function useSetupMode(): SetupMode {
+  const [wanted, setWanted] = useState(false);
+  const [state, setState] = useState<SetupState | null>(null);
+  const [error, setError] = useState<"server" | "lapsed" | null>(null);
+  const [idleClosed, setIdleClosed] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const lastActivity = useRef(0);
+  const phase = setupPhase({ wanted, state, error, playing });
+  const phaseRef = useRef(phase);
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+
+  const open = useCallback(() => {
+    setIdleClosed(false);
+    lastActivity.current = Date.now();
+    setWanted(true);
+  }, []);
+  const close = useCallback(() => setWanted(false), []);
+
+  useEffect(() => {
+    if (!wanted) return;
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const touch = () => {
+      lastActivity.current = Date.now();
+    };
+    const events = ["pointerdown", "keydown", "wheel"] as const;
+    for (const e of events) window.addEventListener(e, touch, { passive: true });
+    const renew = async () => {
+      if (isIdle(lastActivity.current, Date.now(), IDLE_LIMIT_MS)) {
+        setIdleClosed(true);
+        setWanted(false);
+        return;
+      }
+      try {
+        const s = await bridge.setup.enter();
+        if (!alive) return;
+        setState(s);
+        setError(null);
+      } catch (e) {
+        if (!alive) return;
+        setError(e instanceof ApiError && e.code === "setup_off" ? "lapsed" : "server");
+      }
+      if (alive) timer = setTimeout(() => void renew(), renewDelayMs(phaseRef.current));
+    };
+    void renew();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      for (const e of events) window.removeEventListener(e, touch);
+      setState(null);
+      setError(null);
+      setPlaying(false);
+      void bridge.setup.leave().catch(() => undefined);
+    };
+  }, [wanted]);
+
+  return { wanted, state, error, idleClosed, setPlaying, phase, open, close };
 }

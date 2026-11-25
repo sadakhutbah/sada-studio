@@ -17,7 +17,7 @@ describe("core messages", () => {
       "api.liveActiveSince", "api.httpError", "api.whipUnexpected", "sup.heartbeatsMissed", "sup.noLongerAuthorized",
       "when.today", "when.tomorrow", "when.day", "quit.title", "health.camera.many", "health.micro.many",
       "health.hours.range", "health.hours.hour", "health.hours.covered", "health.hours.noSlots",
-      "health.hours.uncoveredOne", "health.hours.uncoveredMany", "health.sleep.after",
+      "health.hours.uncoveredOne", "health.hours.uncoveredMany", "health.sleep.after", "setup.idleClosed",
     ] as const;
     for (const k of keys) expect(placeholders(text("fr", k)), k).toEqual(placeholders(text("en", k)));
   });

@@ -122,6 +122,28 @@ export interface LiveStatus {
   message?: string;
 }
 
+/** Where the orchestrator stands for the setup view: asleep and being woken, answering, or not coming. */
+export type SetupOrchestrator = "waking" | "ready" | "unreachable";
+
+/**
+ * Answer of `POST /studio/setup` (docs/studio-devices.md): the lease, whether the orchestrator answers, whether a
+ * real live is on air (the programme view is then the real broadcast) and whether the programme can be watched.
+ * Protocol data only: the application writes its own sentences.
+ */
+export interface SetupState {
+  active: boolean;
+  /** Seconds before the lease lapses if it is not renewed. */
+  expiresIn: number;
+  orchestrator: SetupOrchestrator;
+  live: boolean;
+  /** The rehearsal programme is being composed (nothing goes to a destination). */
+  rehearsing: boolean;
+  /** The server has a monitoring copy to offer (false: no programme view possible). */
+  available: boolean;
+  /** The relay has the programme picture; `null` when it does not say. */
+  program: boolean | null;
+}
+
 export interface RegieScene {
   id: string;
   kind: "camera" | "slate" | "custom";

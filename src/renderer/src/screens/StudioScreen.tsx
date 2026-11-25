@@ -11,7 +11,7 @@ import { formatBitrate, formatDuration } from "@core/stats";
 import type { KioskSnapshot } from "@shared/ipc";
 import type { CalibrationView, CaptureSettings } from "@core/capture/settings";
 import { normalizeDelay } from "@core/capture/types";
-import { useBroadcast, useCapture, useDevices, useHealth, useKeeper, useLevel, useNow, useReporter } from "../hooks";
+import { useBroadcast, useCapture, useDevices, useHealth, useKeeper, useLevel, useNow, useReporter, useSetupMode } from "../hooks";
 import { loadPrefs, savePrefs, webcamDelayOf, webcamPairKey, type Prefs } from "../prefs";
 import { fill, fr } from "../strings";
 import { t } from "@core/messages";
@@ -19,6 +19,8 @@ import { Brand, Btn, Card, ErrorBox, Field, inputClass, Kicker, StatusPill, Titl
 import { bridge } from "../bridge";
 import { RegiePanel } from "../components/RegiePanel";
 import { RegiePreviewLayer } from "../components/RegiePreviewLayer";
+import { SetupProgramView } from "../components/SetupProgramView";
+import { IDLE_LIMIT_MS } from "@core/setup/view";
 import type { RegieLiveView } from "../regie-preview";
 import { HealthPanel } from "./HealthPanel";
 import { ProjectorPanel } from "./ProjectorPanel";
@@ -57,6 +59,8 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   const [manualError, setManualError] = useState("");
   const [starting, setStarting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Setup mode: the orchestrator's real programme next to the local monitor (see components/SetupProgramView).
+  const setup = useSetupMode();
 
   const update = (patch: Partial<Prefs>) =>
     setPrefs((p) => {
@@ -128,9 +132,10 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
     // A re-plugged camera (`cameras.length`) restarts the capture right away, without waiting for the next attempt.
   }, [sourceOptions, active, source, captureTry, ipMode ? 0 : cameras.length, capture === null]); // eslint-disable-line
 
+  // The <video> element is mounted again when the setup view opens or closes: attach the capture to the new one.
   useEffect(() => {
     if (video.current) video.current.srcObject = stream;
-  }, [stream]);
+  }, [stream, setup.wanted]);
 
   const retry = useKeeper(live, kiosk.wantLive && capture !== null, sourceOptions);
   // With the IP camera, the PC's own devices do not matter: the capture's tracks are what counts.
@@ -220,13 +225,17 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
 
       <main
         data-onair={onAir || undefined}
-        className={`mx-auto grid gap-5 px-6 py-6 ${onAir ? "max-w-[1700px]" : "max-w-[1180px] lg:grid-cols-[minmax(0,1fr)_360px]"}`}
+        className={`mx-auto grid gap-5 px-6 py-6 ${onAir || setup.wanted ? "max-w-[1700px]" : "max-w-[1180px] lg:grid-cols-[minmax(0,1fr)_360px]"}`}
       >
         <div className="grid content-start gap-4">
           <Card className="p-0!">
+            {setup.wanted ? (
+              <div className="grid gap-3 p-3 md:grid-cols-2">
+                <div className="min-w-0 overflow-hidden rounded-[10px] border border-line">
+                  <p className="m-0 px-4.5 py-2 text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-green">{t("setup.local")}</p>
             <div className={`relative aspect-video overflow-hidden rounded-t-[10px] bg-night ${onAir ? "max-h-[calc(100vh-17rem)] min-h-64 w-full" : ""}`}>
               <video ref={video} autoPlay muted playsInline className="size-full object-contain" />
-              <RegiePreviewLayer view={regieView} />
+              {!setup.wanted && <RegiePreviewLayer view={regieView} />}
               {!stream && (
                 <div className="absolute inset-0 grid place-content-center gap-3 px-6 text-center text-night-muted">
                   <p className="m-0">{captureError ? `${captureError} ${fr.preview.retry}` : fr.preview.empty}</p>
@@ -243,6 +252,34 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
                 </p>
               )}
             </div>
+                </div>
+                <div className="min-w-0 overflow-hidden rounded-[10px] border border-line">
+                  <p className="m-0 px-4.5 py-2 text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-green">{t("setup.program")}</p>
+                  <SetupProgramView phase={setup.phase} state={setup.state} onPlaying={setup.setPlaying} />
+                  {setup.phase === "watching" && !setup.state?.live && <p className="m-0 px-4.5 py-2 text-[0.8rem] text-muted">{t("setup.neutralCamera")}</p>}
+                </div>
+              </div>
+            ) : (
+            <div className={`relative aspect-video overflow-hidden rounded-t-[10px] bg-night ${onAir ? "max-h-[calc(100vh-17rem)] min-h-64 w-full" : ""}`}>
+              <video ref={video} autoPlay muted playsInline className="size-full object-contain" />
+              {!setup.wanted && <RegiePreviewLayer view={regieView} />}
+              {!stream && (
+                <div className="absolute inset-0 grid place-content-center gap-3 px-6 text-center text-night-muted">
+                  <p className="m-0">{captureError ? `${captureError} ${fr.preview.retry}` : fr.preview.empty}</p>
+                  {captureError === t("media.deniedSystem") && (
+                    <button type="button" className="mx-auto underline" onClick={() => void window.studio.media.openSettings("microphone")}>
+                      {fr.preview.openSettings}
+                    </button>
+                  )}
+                </div>
+              )}
+              {state.status === "reconnecting" && (
+                <p className="absolute inset-x-0 bottom-0 m-0 bg-warn-bg px-4 py-2 text-[0.9rem] text-warn">
+                  {state.error} {pill.label}
+                </p>
+              )}
+            </div>
+            )}
             <div className="px-4.5 py-3">
               {ipMode && capture && (
                 <p
@@ -306,7 +343,27 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
               </div>
             )}
           </Card>
-          <RegiePanel onLiveChange={setRegieView} audio={{ level, muted, onToggleMute: toggleMute }} />
+          <Card className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="min-w-0 flex-1">
+              <Kicker>{t("setup.kicker")}</Kicker>
+              <p className="m-0 font-serif text-[1.15rem] text-deeper">{t("setup.title")}</p>
+              <p className="m-0 mt-1 text-[0.85rem] text-muted">{setup.state?.live ? t("setup.hintLive") : t("setup.hint")}</p>
+              {setup.idleClosed && !setup.wanted && (
+                <p role="status" className="m-0 mt-2 text-[0.85rem] text-warn">
+                  {t("setup.idleClosed", { min: Math.round(IDLE_LIMIT_MS / 60_000) })}
+                </p>
+              )}
+            </div>
+            {setup.wanted ? (
+              <Btn variante="ghost" onClick={setup.close}>
+                {t("setup.close")}
+              </Btn>
+            ) : (
+              <Btn onClick={setup.open}>{t("setup.open")}</Btn>
+            )}
+          </Card>
+          {/* Remounted on a mode change: the panel reads the rehearsal's scenes and overlays, or the live's again. */}
+          <RegiePanel key={setup.wanted ? "setup" : "live"} onLiveChange={setRegieView} audio={{ level, muted, onToggleMute: toggleMute }} />
           <ProjectorPanel stream={stream} onAir={onAir} prefs={prefs} setPrefs={update} />
           {kiosk.stopPending && <p className="m-0 text-[0.85rem] text-muted">{fr.stop.pending}</p>}
           {state.status === "error" && state.error && state.errorCode !== "conflict" && <ErrorBox>{state.error}</ErrorBox>}

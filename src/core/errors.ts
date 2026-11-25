@@ -17,10 +17,13 @@ export class FatalError extends Error {
 /** Unexpected HTTP response from Sada; `status` 0 = server unreachable. */
 export class ApiError extends Error {
   readonly status: number;
-  constructor(status: number, message: string) {
+  /** Machine-readable reason the server gave (`setup_off`: the setup lease lapsed), when it gave one. */
+  readonly code?: string;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.code = code;
   }
 }
 

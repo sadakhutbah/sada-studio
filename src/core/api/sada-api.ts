@@ -15,6 +15,8 @@ import type {
   PairPoll,
   RegieData,
   RotatedCredentials,
+  SetupOrchestrator,
+  SetupState,
   Slot,
   StreamKind,
   StreamMeta,
@@ -66,6 +68,8 @@ export class SadaHttpApi implements StudioApi {
   private readonly doFetch: typeof fetch;
   private readonly timeoutMs: number;
   private device: DeviceCredentials | null = null;
+  /** The setup view is open: Régie reads and commands then address the rehearsal programme, never the live. */
+  private setupMode = false;
 
   constructor(options: SadaApiOptions = {}) {
     this.doFetch = options.fetch ?? ((...a) => fetch(...a));
@@ -133,41 +137,78 @@ export class SadaHttpApi implements StudioApi {
     await this.json("POST", `${API}/studio/unpair`, { json: {}, device: true });
   }
 
+  /** Switches the Régie calls to the rehearsal programme (setup view open) or back to the live. */
+  useSetupMode(on: boolean): void {
+    this.setupMode = on;
+  }
+
+  /** The mark the server needs to keep a setup command off the live (and to refuse it once the lease lapsed). */
+  private mark<T extends Record<string, unknown>>(body: T): T | (T & { setup: true }) {
+    return this.setupMode ? { ...body, setup: true } : body;
+  }
+
   async getRegie(): Promise<RegieData> {
-    return this.json<RegieData>("GET", `${API}/studio/regie`, { device: true });
+    return this.json<RegieData>("GET", `${API}/studio/regie${this.setupMode ? "?setup=1" : ""}`, { device: true });
   }
 
   async getLiveStatus(): Promise<LiveStatus> {
-    return this.json<LiveStatus>("GET", `${API}/studio/live/status`, { device: true });
+    return this.json<LiveStatus>("GET", `${API}/studio/live/status${this.setupMode ? "?setup=1" : ""}`, { device: true });
   }
 
   async sendLiveCommand(command: string, arg?: string, transition?: TransitionMode): Promise<LiveStatus> {
     const body: Record<string, unknown> = { command };
     if (arg !== undefined) body.arg = arg;
     if (transition !== undefined) body.transition = transition;
-    return this.json<LiveStatus>("POST", `${API}/studio/live/command`, { json: body, device: true });
+    return this.json<LiveStatus>("POST", `${API}/studio/live/command`, { json: this.mark(body), device: true });
   }
 
   async setTransition(mode: TransitionMode): Promise<{ ok: boolean; transition: TransitionMode }> {
     return this.json<{ ok: boolean; transition: TransitionMode }>("POST", `${API}/live/regie/transition`, {
-      json: { mode },
+      json: this.mark({ mode }),
       device: true,
     });
   }
 
   async setMute(muted: boolean): Promise<{ ok: boolean; muted: boolean; mic_muted: boolean }> {
     return this.json<{ ok: boolean; muted: boolean; mic_muted: boolean }>("POST", `${API}/live/regie/mute`, {
-      json: { muted },
+      json: this.mark({ muted }),
       device: true,
     });
   }
 
   async setLiveOverlay(kind: OverlayKind, payload: Record<string, unknown>): Promise<OverlayUpdateResponse> {
     return this.json<OverlayUpdateResponse>("PATCH", `${API}/studio/live/overlays/${encodeURIComponent(kind)}`, {
-      json: payload,
+      json: this.mark(payload),
       device: true,
     });
   }
+
+  /**
+   * Setup mode: takes or renews the lease (wakes the orchestrator when it sleeps) and says where things stand.
+   * The Régie calls follow the mode only once the server accepted it.
+   */
+  readonly setup = {
+    enter: async (): Promise<SetupState> => {
+      const d = await this.json<Record<string, unknown>>("POST", `${API}/studio/setup`, { json: { on: true }, device: true });
+      this.setupMode = true;
+      return normalizeSetup(d);
+    },
+    leave: async (): Promise<void> => {
+      this.setupMode = false; // the live is addressed again whatever the server answers
+      await this.json("POST", `${API}/studio/setup`, { json: { on: false }, device: true });
+    },
+    /** WHEP: reads the programme of the device's mosque. 404: the programme is not published (yet). */
+    whepOffer: async (sdp: string): Promise<{ answer: string; resource: string }> => {
+      const res = await this.raw("POST", `${API}/studio/setup/whep`, { body: sdp, headers: { "Content-Type": SDP }, device: true });
+      await this.check(res);
+      const location = res.headers.get("location");
+      if (res.status !== 201 || !location) throw new ApiError(res.status, t("api.whipUnexpected", { status: res.status }));
+      return { answer: await res.text(), resource: this.sameOriginPath(location) };
+    },
+    whepClose: async (resource: string): Promise<void> => {
+      await this.raw("DELETE", resource, { device: true });
+    },
+  };
 
   readonly whip: WhipSignaling = {
     offer: async (sdp) => {
@@ -218,6 +259,7 @@ export class SadaHttpApi implements StudioApi {
     const isJson = (res.headers.get("content-type") ?? "").includes("json");
     const data = isJson ? ((await res.json().catch(() => null)) as Record<string, unknown> | null) : null;
     if (res.ok) return data;
+    if (res.status === 409 && data?.code === "setup_off") throw new ApiError(409, t("setup.lapsed"), "setup_off");
     if (res.status === 409) throw new ApiError(409, conflictMessage(data));
     const message = (data && (data.message || data.error)) || t("api.httpError", { status: res.status });
     throw new ApiError(res.status, String(message));
@@ -293,6 +335,22 @@ export function toWireReport(r: HeartbeatReport): Record<string, unknown> {
   // Before the first workstation check (none reported), camera and microphone are unknown: we do not claim them absent.
   const known = checks.length > 0 ? { camera: r.camera, microphone: r.micro } : {};
   return { state, version: r.version, ...known, bitrate_kbps: r.bitrate, health };
+}
+
+const ORCHESTRATOR_STATES: readonly SetupOrchestrator[] = ["waking", "ready", "unreachable"];
+
+/** Lenient, like the heartbeat: an unknown orchestrator state is read as `waking`, never as a failure. */
+export function normalizeSetup(d: Record<string, unknown> | null): SetupState {
+  const o = d?.orchestrator;
+  return {
+    active: d?.active === true,
+    expiresIn: Number(d?.expires_in) || 0,
+    orchestrator: ORCHESTRATOR_STATES.includes(o as SetupOrchestrator) ? (o as SetupOrchestrator) : "waking",
+    live: d?.live === true,
+    rehearsing: d?.rehearsing === true,
+    available: d?.available !== false,
+    program: typeof d?.program === "boolean" ? d.program : null,
+  };
 }
 
 /** Lenient: a partial response must never break the heartbeat loop. */
