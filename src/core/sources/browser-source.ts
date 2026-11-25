@@ -218,3 +218,19 @@ export function normalizeBrowserSourceConfig(input: Partial<BrowserSourceConfig>
     size,
   };
 }
+
+/** Chromium's ERR_ABORTED: the load was superseded (redirect, new navigation, stop), not a failure of the page. */
+export const ERR_ABORTED = -3;
+
+/** `did-fail-load`: only a real failure of the main frame counts; sub-frames and cancelled loads are ignored. */
+export function isReportableLoadFailure(errorCode: number, isMainFrame: boolean): boolean {
+  return isMainFrame && errorCode !== ERR_ABORTED;
+}
+
+/** A rejection of `loadURL` (it rejects on every `did-fail-load`, cancellations included): is it a real failure? */
+export function isReportableLoadRejection(e: unknown): boolean {
+  const err = e as { errno?: unknown; code?: unknown; message?: unknown } | null;
+  if (err && err.errno === ERR_ABORTED) return false;
+  if (err && err.code === "ERR_ABORTED") return false;
+  return !(err && typeof err.message === "string" && /\bERR_ABORTED\b|\(-3\)/.test(err.message));
+}
