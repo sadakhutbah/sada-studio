@@ -95,7 +95,7 @@ export function evaluateHealth(i: HealthInput): HealthItem[] {
             title: t("health.micro.title"),
             status: "problem",
             detail: t("health.micro.none"),
-            fix: t("health.micro.fix"),
+            fix: t(i.windows ? "health.micro.fix" : "health.micro.fix.other"),
           },
   );
 
@@ -107,7 +107,7 @@ export function evaluateHealth(i: HealthInput): HealthItem[] {
           title: t("health.vault.title"),
           status: "warn",
           detail: t("health.vault.none"),
-          fix: t("health.vault.fix"),
+          fix: t(i.windows ? "health.vault.fix" : "health.vault.fix.other"),
         },
   );
 

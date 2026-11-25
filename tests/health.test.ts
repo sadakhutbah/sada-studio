@@ -96,6 +96,13 @@ describe("Workstation health", () => {
     expect(toChecks(items).every((c) => c.ok)).toBe(true);
   });
 
+  it("outside Windows, micro and vault fixes never mention Windows", () => {
+    const items = evaluateHealth({ ...base, windows: null, microphones: 0, vaultPersistent: false });
+    for (const id of ["micro", "device_vault"]) expect(byId(items, id).fix).not.toMatch(/Windows/);
+    const win = evaluateHealth({ ...base, microphones: 0, vaultPersistent: false });
+    expect(byId(win, "micro").fix).toMatch(/Windows/);
+  });
+
   it("unreadable settings: unknown, not a failure", () => {
     const items = evaluateHealth({ ...base, windows: { autoLogon: null, activeHours: null, sleepAcSeconds: null, launchAtLogin: null } });
     expect(byId(items, "windows_autologon").status).toBe("unknown");
