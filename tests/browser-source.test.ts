@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   computeBrowserSourceRect,
   isAllowedBrowserRequest,
+  isReportableLoadFailure,
+  isReportableLoadRejection,
   isPrivateOrLocalHost,
   DEFAULT_BROWSER_SOURCE,
   normalizeBrowserSourceConfig,
@@ -149,5 +151,20 @@ describe("normalizeBrowserSourceConfig", () => {
       corner: "tl",
       size: "lg",
     });
+  });
+});
+
+describe("load failure reporting", () => {
+  it("ignores sub-frame failures and cancelled loads (ERR_ABORTED -3), keeps real main-frame failures", () => {
+    expect(isReportableLoadFailure(-105, true)).toBe(true);
+    expect(isReportableLoadFailure(-105, false)).toBe(false);
+    expect(isReportableLoadFailure(-3, true)).toBe(false);
+  });
+
+  it("ignores a loadURL rejection caused by a cancelled load", () => {
+    expect(isReportableLoadRejection(Object.assign(new Error("ERR_ABORTED (-3) loading 'https://x.example/'"), { errno: -3, code: "ERR_ABORTED" }))).toBe(false);
+    expect(isReportableLoadRejection(new Error("ERR_ABORTED (-3) loading 'https://x.example/'"))).toBe(false);
+    expect(isReportableLoadRejection(Object.assign(new Error("ERR_NAME_NOT_RESOLVED (-105) loading"), { errno: -105 }))).toBe(true);
+    expect(isReportableLoadRejection("boom")).toBe(true);
   });
 });
