@@ -56,8 +56,8 @@ export interface SourceOptions {
   sourceKind?: "camera" | "ip-camera" | "screen";
   /** For `ip-camera`: part of the capture settings, here so that a change restarts the capture (the main process holds the rest). */
   ipCamera?: { rtspUrl: string; audioDevice: string };
-  /** For `screen`: desktopCapturer source id and whether to mix the local microphone. */
-  screen?: { sourceId: string; includeMic?: boolean };
+  /** For `screen`: desktopCapturer source id, whether to mix the local microphone, and whether to ask for the system sound (where available). */
+  screen?: { sourceId: string; includeMic?: boolean; systemAudio?: boolean };
   /** Webcam: delay of the microphone, ms (applied live by Web Audio; saved per camera/microphone pair). */
   audioDelayMs?: number;
   videoDeviceId?: string;
@@ -80,6 +80,8 @@ export interface MediaSourceStrategy {
   onEnded(cb: () => void): () => void;
   /** Synchronization controls, for the sources whose delay is applied by the renderer (webcam). */
   readonly sync?: SourceSync;
+  /** Sound of the shared screen, kept apart from the stream (the mix gives it its own volume); null when there is none. */
+  systemAudio?(): MediaStream | null;
   /** The stream to send changed while the source stays acquired (raw <-> composited): swap the senders' tracks. */
   onStreamChange?(cb: (s: MediaStream) => void): () => void;
 }

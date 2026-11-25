@@ -1,9 +1,32 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { CaptureView } from "../core/capture/settings";
 import type { BrowserSourceFrame, BrowserSourceStatus } from "../core/sources/types";
+import type { ControlRequest, ControlResult } from "../core/control/actions";
 import type { CaptureMedia, KioskSnapshot, StudioBridge } from "../shared/ipc";
 
 const bridge: StudioBridge = {
+  control: {
+    get: () => ipcRenderer.invoke("control:get"),
+    setShortcut: (action, accelerator) => ipcRenderer.invoke("control:set-shortcut", action, accelerator),
+    setApi: (enabled, port) => ipcRenderer.invoke("control:set-api", enabled, port),
+    regenerateToken: () => ipcRenderer.invoke("control:regenerate-token"),
+    copyToken: () => ipcRenderer.invoke("control:copy-token"),
+    onRequest: (handler) => {
+      const listener = (_e: unknown, id: number, request: ControlRequest) => {
+        void (async () => {
+          let result: ControlResult;
+          try {
+            result = await handler(request);
+          } catch (e) {
+            result = { ok: false, code: "failed", message: e instanceof Error ? e.message : String(e) };
+          }
+          ipcRenderer.send("control:response", id, result);
+        })();
+      };
+      ipcRenderer.on("control:request", listener);
+      return () => void ipcRenderer.removeListener("control:request", listener);
+    },
+  },
   capture: {
     get: () => ipcRenderer.invoke("capture:get"),
     onChange: (cb) => {
@@ -41,12 +64,14 @@ const bridge: StudioBridge = {
       reload: () => ipcRenderer.invoke("sources:browser-reload"),
       setVisible: (visible) => ipcRenderer.invoke("sources:browser-set-visible", visible),
       stop: () => ipcRenderer.invoke("sources:browser-stop"),
+      audioSourceId: () => ipcRenderer.invoke("sources:browser-audio-id"),
     },
     screen: {
       access: () => ipcRenderer.invoke("sources:screen-access"),
       list: () => ipcRenderer.invoke("sources:screen-list"),
       select: (sourceId) => ipcRenderer.invoke("sources:screen-select", sourceId),
       openSettings: () => ipcRenderer.invoke("sources:screen-open-settings"),
+      audioSupport: () => ipcRenderer.invoke("sources:screen-audio-support"),
     },
   },
   media: {

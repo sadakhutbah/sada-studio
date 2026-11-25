@@ -39,7 +39,63 @@ It replaces OBS for mosques that use the hosted version of Sadā: nothing to con
   comes with its fix, and Sadā e-mails the mosque if something stays broken.
 - **Resilient**: single instance, tray icon, crash recovery, reconnects on its own when the network or
   the camera comes back.
+- **Local sources**: a web page (counter, donation widget) and a screen or window share, composed with the
+  camera; the sound of both is mixed with the microphone, with a volume per source.
+- **Shortcuts and Stream Deck**: global keyboard shortcuts and a local control API (see
+  [Remote control](#remote-control-shortcuts-and-stream-deck)).
 - **Automatic updates**, never during a live nor just before a slot.
+
+## Remote control: shortcuts and Stream Deck
+
+Open **Réglages** (gear button), section *Raccourcis et API locale*.
+
+**Global shortcuts** work even when the window is hidden in the notification area. Defaults (change or remove them
+with the *Modifier* and *Retirer* buttons; a shortcut needs Ctrl, Alt or Cmd with a letter, digit, F key or arrow):
+
+| Action | Default (`Ctrl` on Windows and Linux, `Cmd` on macOS) |
+| --- | --- |
+| Mute / restore the microphone | `Ctrl+Alt+Shift+M` |
+| Show / hide the web source | `Ctrl+Alt+Shift+B` |
+| Switch the screen share on / off | `Ctrl+Alt+Shift+S` |
+| Next / previous scene | `Ctrl+Alt+Shift+Right` / `Left` |
+
+A shortcut another application already holds is reported in the settings. Showing or hiding a source never asks
+for confirmation; removing one always does, and cannot be triggered from a shortcut or from the API.
+
+**Local API** (off by default; tick *Activer l'API locale*): an HTTP server on `127.0.0.1` only, default port
+`17420`, that runs the same actions. The settings show the port and a random token (stored in the user data
+directory, readable by your account only; *Régénérer* replaces it and the old one stops working at once).
+
+- Every request needs the token: `Authorization: Bearer <token>` (or an `X-Sada-Token` header, or `?token=<token>`
+  for clients that cannot send headers).
+- Requests that do not come from this computer, are addressed to another host name, or carry a non-local `Origin`
+  (a web page on another site) are refused. The token is compared in constant time, and repeated failures are
+  throttled (`429`).
+- `GET /v1/actions` lists the actions; `POST /v1/actions/<action>` (or `GET`) runs one and answers with the
+  resulting state, for example `{"ok":true,"state":{"micMuted":true}}`. Errors have a stable `code`.
+
+| Action | Effect |
+| --- | --- |
+| `mic.toggle`, `mic.mute`, `mic.unmute` | Microphone |
+| `browser.toggle`, `browser.show`, `browser.hide` | Web source (error `no_browser_source` if none was added) |
+| `screen.toggle`, `screen.start`, `screen.stop` | Screen share (error `no_screen_source` until a screen or window is chosen) |
+| `scene.next`, `scene.previous` | Scene before or after the current one (error at either end, no wrap-around) |
+| `scene.set` | A given scene: `?scene=avant` or a JSON body `{"scene":"avant"}` |
+
+```bash
+TOKEN=...   # shown in the settings
+curl -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:17420/v1/actions/mic.toggle
+curl -X POST -H "Authorization: Bearer $TOKEN" -d '{"scene":"avant"}' http://127.0.0.1:17420/v1/actions/scene.set
+```
+
+**Stream Deck** (no native plugin): with an HTTP request plugin such as *API Ninja*, add one button per action:
+method `POST`, URL `http://127.0.0.1:17420/v1/actions/mic.toggle`, header `Authorization` with the value
+`Bearer <token>`. The built-in *Website* action opens the address in a browser and cannot send headers: if you use
+it, put the token in the address (`...?token=<token>`) and enable its background access option when your version
+has one.
+
+**Bitfocus Companion**: add a *Generic HTTP Requests* connection, then a *POST* action with the path
+`/v1/actions/mic.toggle` and the header `Authorization: Bearer <token>`, with base URL `http://127.0.0.1:17420`.
 
 ## Download
 

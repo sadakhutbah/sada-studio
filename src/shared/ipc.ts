@@ -12,6 +12,9 @@ import type { CalibrationView, CaptureSettings, CaptureView } from "../core/capt
 import type { WindowsFacts } from "../core/health/health";
 import type { ClientReport, KioskView } from "../core/kiosk/supervisor";
 import type { UpdateStatus } from "../core/kiosk/update-gate";
+import type { ControlRequest, ControlResult, ShortcutAction } from "../core/control/actions";
+import type { ControlView } from "../core/control/settings";
+import type { ScreenAudioSupport } from "../core/sources/screen-audio";
 import type { BrowserSourceFrame, BrowserSourceStatus, DesktopSourceInfo, ScreenAccess } from "../core/sources/types";
 
 /** Serializable result of an IPC call: errors keep their HTTP code (0 = network). */
@@ -80,6 +83,8 @@ export interface SourcesBridge {
     setVisible(visible: boolean): Promise<IpcResult<BrowserSourceStatus>>;
     /** Removes the source: closes the window and drops what the page stored. */
     stop(): Promise<IpcResult<BrowserSourceStatus>>;
+    /** Identifier (valid a few seconds) to capture the page's sound with `getUserMedia` (`chromeMediaSource: "tab"`); null when no page. */
+    audioSourceId(): Promise<IpcResult<string | null>>;
   };
   screen: {
     /** macOS screen-recording permission (always `granted` elsewhere). */
@@ -89,11 +94,27 @@ export interface SourcesBridge {
     /** The source the next screen capture will serve (null: none). */
     select(sourceId: string | null): Promise<IpcResult<null>>;
     openSettings(): Promise<void>;
+    /** Whether the shared screen's sound can be captured on this system, and why not otherwise. */
+    audioSupport(): Promise<IpcResult<ScreenAudioSupport>>;
   };
+}
+
+/** Global shortcuts and local control API (Stream Deck, Companion): settings, and the actions the window runs. */
+export interface ControlBridge {
+  get(): Promise<IpcResult<ControlView>>;
+  /** "" removes the shortcut. */
+  setShortcut(action: ShortcutAction, accelerator: string): Promise<IpcResult<ControlView>>;
+  setApi(enabled: boolean, port: number): Promise<IpcResult<ControlView>>;
+  regenerateToken(): Promise<IpcResult<ControlView>>;
+  /** Puts the API token on the system clipboard. */
+  copyToken(): Promise<IpcResult<null>>;
+  /** The window runs the actions asked from outside (shortcuts, local API); its answer is sent back by the preload. */
+  onRequest(handler: (request: ControlRequest) => Promise<ControlResult> | ControlResult): () => void;
 }
 
 /** What the main process exposes to the UI (`window.studio`). */
 export interface StudioBridge {
+  control: ControlBridge;
   capture: CaptureBridge;
   sources: SourcesBridge;
   media: {
