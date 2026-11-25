@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StreamKind } from "@core/api/types";
 import { meterPosition } from "@core/audio/meter";
 import { InputAudioMixer } from "@core/audio/mixer";
-import { toggleMuteSynced } from "@core/audio/mute-sync";
+import { MuteSync, type MuteOutcome } from "@core/audio/mute-sync";
 import { formatCountdown, formatWhen } from "@core/kiosk/format";
 import { isActive } from "@core/session/machine";
 import type { SourceOptions } from "@core/sources/types";
@@ -53,12 +53,17 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   }, [mixer, composited, stream]);
   useEffect(() => () => mixer.dispose(), [mixer]);
   const [muteError, setMuteError] = useState<string | null>(null);
+  // The orchestrator mirrors the state so the web Régie shows it too. Muting always holds here (a safety), the server is
+  // told best effort with retries; restoring only happens once the server confirmed.
+  const muteSync = useMemo(() => new MuteSync(mixer, (m) => bridge.regie.setMute(m), { onSynced: () => setMuteError(null) }), [mixer]);
+  const reportMute = (o: MuteOutcome) => {
+    if (o.error) setMuteError(t("mute.restoreFailed", { detail: o.error.message }));
+    else if (o.warning) setMuteError(t("mute.pending", { detail: o.warning.message }));
+    return o;
+  };
   const toggleMute = () => {
     setMuteError(null);
-    // The orchestrator mirrors the state so the web Régie shows it too; if it refuses, the local state goes back.
-    void toggleMuteSynced(mixer, bridge.regie.setMute).then((e) => {
-      if (e) setMuteError(`${fr.regie.muteFailed} ${e.message}`.trim());
-    });
+    void muteSync.toggle().then(reportMute);
   };
   // Shortcuts and the local API: the main process asks this window to run an action; the answer says what the screen shows now.
   const controlContext = useRef<ControlContext | null>(null);
@@ -127,11 +132,10 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
       mic: {
         muted: () => mixer.isMuted(),
         set: async (target) => {
-          if (mixer.isMuted() === target) return null;
+          if (mixer.isMuted() === target) return { error: null };
           setMuteError(null);
-          const e = await toggleMuteSynced(mixer, bridge.regie.setMute);
-          if (e) setMuteError(`${fr.regie.muteFailed} ${e.message}`.trim());
-          return e ? e.message : null;
+          const o = reportMute(await muteSync.set(target));
+          return { error: o.error ? t("mute.restoreFailed", { detail: o.error.message }) : null, warning: o.warning ? t("mute.pending", { detail: o.warning.message }) : null };
         },
       },
       browser: local.control.browser,

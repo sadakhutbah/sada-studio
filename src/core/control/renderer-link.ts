@@ -1,4 +1,5 @@
 import { normalizeControlResult, type ControlRequest, type ControlResult } from "./actions";
+import { CONTROL_TIMEOUT_MS } from "../audio/mute-sync";
 import { t } from "../messages";
 
 /**
@@ -11,7 +12,7 @@ export class RendererLink {
 
   constructor(
     private readonly send: (id: number, request: ControlRequest) => boolean,
-    private readonly timeoutMs = 3000,
+    private readonly timeoutMs = CONTROL_TIMEOUT_MS,
   ) {}
 
   request(request: ControlRequest): Promise<ControlResult> {
