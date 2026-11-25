@@ -1,5 +1,5 @@
 import { t } from "../messages";
-import type { MediaSourceStrategy, SourceOptions } from "./types";
+import { RAW_AUDIO_CONSTRAINTS, type MediaSourceStrategy, type SourceOptions } from "./types";
 
 /** What the screen source needs from `navigator.mediaDevices`. `getDisplayMedia` is absent in some embedders. */
 export type ScreenMediaDevices = Pick<MediaDevices, "getUserMedia"> & Partial<Pick<MediaDevices, "getDisplayMedia">>;
@@ -118,7 +118,8 @@ export class ScreenSource implements MediaSourceStrategy {
     if (devices.getDisplayMedia) {
       try {
         return await devices.getDisplayMedia({
-          audio: options.screen?.systemAudio === true,
+          // The loopback sound goes out untouched: no AGC (it ramped the level down within seconds), echo cancellation or denoising.
+          audio: options.screen?.systemAudio === true ? { ...RAW_AUDIO_CONSTRAINTS } : false,
           video: {
             width: { max: options.video?.width ?? 1920 },
             height: { max: options.video?.height ?? 1080 },

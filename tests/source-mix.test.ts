@@ -274,7 +274,7 @@ describe("ScreenSource system sound", () => {
     const source = new ScreenSource({ getUserMedia, getDisplayMedia });
     const routing = new RoutingSource({ screen: source }, "screen");
     const out = await routing.acquire({ sourceKind: "screen", screen: { sourceId: "screen:0:0", includeMic: true, systemAudio: true }, audio: DEFAULT_AUDIO });
-    expect(getDisplayMedia).toHaveBeenCalledWith(expect.objectContaining({ audio: true }));
+    expect(getDisplayMedia).toHaveBeenCalledWith(expect.objectContaining({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }));
     expect(out.getAudioTracks().map((t) => t.id)).toEqual(["mic"]);
     expect(routing.systemAudio()?.getAudioTracks().map((t) => t.id)).toEqual(["loopback"]);
     routing.release();

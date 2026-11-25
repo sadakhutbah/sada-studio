@@ -153,4 +153,18 @@ describe("ScreenSource", () => {
     expect(getDisplayMedia).not.toHaveBeenCalled();
     expect(getUserMedia).not.toHaveBeenCalled();
   });
+
+  it("captures the system sound without echo cancellation, noise suppression or automatic gain", async () => {
+    const getDisplayMedia = vi.fn(async (_c: unknown) => makeStream([makeTrack("video"), makeTrack("audio")]));
+    const screen = new ScreenSource({ getUserMedia: vi.fn(), getDisplayMedia }, async () => undefined);
+    await screen.acquire({ sourceKind: "screen", screen: { sourceId: "screen:0:0", systemAudio: true, includeMic: false }, audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    expect((getDisplayMedia.mock.calls[0]![0] as { audio: unknown }).audio).toEqual({ echoCancellation: false, noiseSuppression: false, autoGainControl: false });
+  });
+
+  it("does not ask for the system sound when it is off", async () => {
+    const getDisplayMedia = vi.fn(async (_c: unknown) => makeStream([makeTrack("video")]));
+    const screen = new ScreenSource({ getUserMedia: vi.fn(), getDisplayMedia }, async () => undefined);
+    await screen.acquire({ sourceKind: "screen", screen: { sourceId: "screen:0:0", includeMic: false }, audio: DEFAULT_AUDIO });
+    expect((getDisplayMedia.mock.calls[0]![0] as { audio: unknown }).audio).toBe(false);
+  });
 });

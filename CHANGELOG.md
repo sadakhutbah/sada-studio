@@ -33,3 +33,4 @@
 ### Fixed
 
 - The quit dialog named Windows on every system; it now says macOS, Windows or "the computer".
+- The sound of the shared screen no longer fades out by itself: its capture asked for automatic gain control, echo cancellation and noise suppression, and the gain control pulled the level down within seconds. System sound is now captured untouched.
