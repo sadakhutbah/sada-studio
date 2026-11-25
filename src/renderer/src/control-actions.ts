@@ -5,8 +5,11 @@ import { t } from "@core/messages";
 export interface ControlContext {
   mic: {
     muted(): boolean;
-    /** Mutes or restores the microphone (and tells the server); the error message when it did not hold, null otherwise. */
-    set(muted: boolean): Promise<string | null>;
+    /**
+     * Mutes or restores the microphone (and tells the server). `error`: the change did not happen; `warning`: it did,
+     * but the server could not be told yet.
+     */
+    set(muted: boolean): Promise<{ error: string | null; warning?: string | null }>;
   };
   browser: {
     state(): "none" | "shown" | "hidden";
@@ -33,9 +36,10 @@ export async function runControlAction(request: ControlRequest, ctx: ControlCont
     case "mic.mute":
     case "mic.unmute": {
       const target = request.action === "mic.toggle" ? !ctx.mic.muted() : request.action === "mic.mute";
-      const error = await ctx.mic.set(target);
+      const { error, warning } = await ctx.mic.set(target);
       const state = { micMuted: ctx.mic.muted() };
-      return error ? { ok: false, code: "failed", message: error, state } : { ok: true, state };
+      if (error) return { ok: false, code: "failed", message: error, state };
+      return warning ? { ok: true, message: warning, state } : { ok: true, state };
     }
     case "browser.toggle":
     case "browser.show":

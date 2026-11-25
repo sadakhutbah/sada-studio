@@ -83,8 +83,11 @@ export interface SourcesBridge {
     setVisible(visible: boolean): Promise<IpcResult<BrowserSourceStatus>>;
     /** Removes the source: closes the window and drops what the page stored. */
     stop(): Promise<IpcResult<BrowserSourceStatus>>;
-    /** Identifier (valid a few seconds) to capture the page's sound with `getUserMedia` (`chromeMediaSource: "tab"`); null when no page. */
-    audioSourceId(): Promise<IpcResult<string | null>>;
+    /**
+     * Allows the next `getDisplayMedia` call of the window to receive the page's sound (and nothing else); false when
+     * there is no page. The page itself stays muted on this computer.
+     */
+    armAudio(): Promise<IpcResult<boolean>>;
   };
   screen: {
     /** macOS screen-recording permission (always `granted` elsewhere). */

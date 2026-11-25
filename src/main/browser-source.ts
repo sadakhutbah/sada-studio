@@ -120,13 +120,13 @@ export class BrowserSourceService {
   }
 
   /**
-   * Identifier with which `requester` (the application window) captures this page's sound (tab capture). The page stays
-   * muted on this computer: the capture does not need it audible, and nothing plays on the speakers.
+   * The page's main frame, whose sound the application window captures through `getDisplayMedia` (see sources.ts).
+   * The page stays muted on this computer: the capture does not need it audible, and nothing plays on the speakers.
    */
-  audioSourceId(requester: Electron.WebContents): string | null {
+  audioFrame(): Electron.WebFrameMain | null {
     const win = this.win;
     if (!win || win.isDestroyed() || !this.status.active) return null;
-    return win.webContents.getMediaSourceId(requester);
+    return win.webContents.mainFrame;
   }
 
   reload(): BrowserSourceStatus {

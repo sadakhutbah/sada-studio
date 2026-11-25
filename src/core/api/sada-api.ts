@@ -1,3 +1,4 @@
+import { MUTE_PUSH_TIMEOUT_MS } from "../audio/mute-sync";
 import { ApiError, DeviceRevokedError } from "../errors";
 import { t } from "../messages";
 import type { WhipSignaling } from "../transport/whip";
@@ -176,6 +177,8 @@ export class SadaHttpApi implements StudioApi {
     return this.json<{ ok: boolean; muted: boolean; mic_muted: boolean }>("POST", `${API}/live/regie/mute`, {
       json: this.mark({ muted }),
       device: true,
+      // Shorter than the default: the microphone must not wait on a server that does not answer.
+      timeoutMs: MUTE_PUSH_TIMEOUT_MS,
     });
   }
 
@@ -266,10 +269,11 @@ export class SadaHttpApi implements StudioApi {
   private async json<T>(
     method: string,
     path: string,
-    o: { base?: string; json?: unknown; device?: boolean },
+    o: { base?: string; json?: unknown; device?: boolean; timeoutMs?: number },
   ): Promise<T> {
     const res = await this.raw(method, path, {
       base: o.base,
+      timeoutMs: o.timeoutMs,
       device: o.device,
       body: o.json === undefined ? undefined : JSON.stringify(o.json),
       headers: o.json === undefined ? {} : { "Content-Type": "application/json" },
@@ -292,7 +296,7 @@ export class SadaHttpApi implements StudioApi {
   private async raw(
     method: string,
     path: string,
-    o: { base?: string; body?: BodyInit; headers?: Record<string, string>; device?: boolean },
+    o: { base?: string; body?: BodyInit; headers?: Record<string, string>; device?: boolean; timeoutMs?: number },
   ): Promise<Response> {
     const headers: Record<string, string> = { Accept: "application/json", ...o.headers };
     let base = o.base ?? "";
@@ -304,7 +308,7 @@ export class SadaHttpApi implements StudioApi {
     if (!base) throw new ApiError(0, t("api.addressMissing"));
     let res: Response;
     try {
-      res = await this.doFetch(base + path, { method, headers, body: o.body, redirect: "manual", signal: AbortSignal.timeout(this.timeoutMs) });
+      res = await this.doFetch(base + path, { method, headers, body: o.body, redirect: "manual", signal: AbortSignal.timeout(o.timeoutMs ?? this.timeoutMs) });
     } catch {
       throw new ApiError(0, t("api.unreachable"));
     }

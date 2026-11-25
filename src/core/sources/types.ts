@@ -9,6 +9,12 @@ export interface AudioSettings {
 
 export const DEFAULT_AUDIO: AudioSettings = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
 
+/**
+ * Constraints for captured program sound (system loopback, web page): browser processing must be off, or the
+ * automatic gain control slowly pulls the level down and echo cancellation or noise suppression eat the content.
+ */
+export const RAW_AUDIO_CONSTRAINTS = { echoCancellation: false, noiseSuppression: false, autoGainControl: false } as const;
+
 export interface DesktopSourceInfo {
   id: string;
   name: string;

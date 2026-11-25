@@ -8,7 +8,7 @@ import type { StudioSceneCompositor } from "@core/sources/compositor";
 import { findRemembered, rememberedFrom, type RememberedScreen } from "@core/sources/remembered";
 import type { RoutingSource } from "@core/sources/routing";
 import type { ScreenAudioSupport } from "@core/sources/screen-audio";
-import type { BrowserSourceConfig, BrowserSourceStatus, DesktopSourceInfo } from "@core/sources/types";
+import { RAW_AUDIO_CONSTRAINTS, type BrowserSourceConfig, type BrowserSourceStatus, type DesktopSourceInfo } from "@core/sources/types";
 import { bridge } from "./bridge";
 import type { ControlContext } from "./control-actions";
 import type { LocalSourcesProps } from "./components/LocalSources";
@@ -115,12 +115,12 @@ export function useLocalSources({ compositor, source, mix, browser: browserPrefs
     let captured: MediaStream | null = null;
     void (async () => {
       try {
-        const id = await bridge.sources.browser.audioSourceId();
-        if (!alive || !id) return;
-        captured = await navigator.mediaDevices.getUserMedia({
-          video: false,
-          audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: id } } as unknown as MediaTrackConstraints,
-        });
+        if (!(await bridge.sources.browser.armAudio()) || !alive) return;
+        // Chromium refuses tab capture through getUserMedia in Electron; the main process answers this call with the page's frame.
+        captured = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: { ...RAW_AUDIO_CONSTRAINTS } });
+        // Only the sound is wanted: the page's picture comes from the paint events, not from here.
+        captured.getVideoTracks().forEach((tr) => (tr.stop(), captured?.removeTrack(tr)));
+        if (captured.getAudioTracks().length === 0) throw new Error("no audio");
         if (!alive) return captured.getTracks().forEach((tr) => tr.stop());
         setPageAudioError(null);
         setPageAudio(captured);

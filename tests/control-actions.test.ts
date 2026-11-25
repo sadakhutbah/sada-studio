@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { runControlAction, type ControlContext } from "../src/renderer/src/control-actions";
 
-function context(init: { muted?: boolean; browser?: "none" | "shown" | "hidden"; screenOn?: boolean; source?: boolean; micError?: string; screenError?: string } = {}) {
+function context(init: { muted?: boolean; browser?: "none" | "shown" | "hidden"; screenOn?: boolean; source?: boolean; micError?: string; micWarning?: string; screenError?: string } = {}) {
   const s = { muted: init.muted ?? false, browser: init.browser ?? "hidden", screenOn: init.screenOn ?? false };
   const setVisible = vi.fn((v: boolean) => void (s.browser = v ? "shown" : "hidden"));
   const micSet = vi.fn(async (m: boolean) => {
-    if (init.micError) return init.micError;
+    if (init.micError) return { error: init.micError };
     s.muted = m;
-    return null;
+    return { error: null, ...(init.micWarning ? { warning: init.micWarning } : {}) };
   });
   const screenSet = vi.fn(async (on: boolean) => {
     if (init.screenError) return init.screenError;
@@ -39,6 +39,11 @@ describe("runControlAction: microphone", () => {
   it("reports a refused change with the state that holds", async () => {
     const { ctx } = context({ micError: "server down" });
     expect(await runControlAction({ action: "mic.mute" }, ctx)).toEqual({ ok: false, code: "failed", message: "server down", state: { micMuted: false } });
+  });
+
+  it("answers ok with the warning when the mic is muted but the server was not told", async () => {
+    const { ctx } = context({ micWarning: "orchestrator unreachable" });
+    expect(await runControlAction({ action: "mic.mute" }, ctx)).toEqual({ ok: true, message: "orchestrator unreachable", state: { micMuted: true } });
   });
 });
 
