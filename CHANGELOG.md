@@ -14,6 +14,8 @@
 - The scene canvas is only used while a web source or a shared screen is shown; otherwise the camera stream is sent untouched. Drawing is driven by a timer, so it no longer freezes when the window is hidden in the notification area.
 - Web source frames travel as raw pixels, at most 15 per second, scaled down to 1280×720 at most, one at a time (a frame is dropped if the previous one has not been consumed): no PNG encoding on the main process.
 
+- Removing the web source now asks for confirmation first (a message in the Régie panel, Escape or "Keep" cancels). Showing or hiding it stays instant, with no confirmation.
+
 ### Security
 
 - The web source runs in its own non-persistent session (`browser-source`) with no preload and no permission granted (camera, microphone, screen, notifications, devices…); the application's own policy does not apply to it, and nothing the page stored survives its removal.

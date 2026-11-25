@@ -8,6 +8,7 @@ import type {
   BrowserSourceStatus,
   DesktopSourceInfo,
 } from "@core/sources/types";
+import { removalStep, type RemovalEvent, type RemovalPhase } from "@core/sources/removal";
 import { Btn } from "../ui";
 import { fr as t } from "../strings";
 import { EyeBtn, inputCls, smallBtn } from "./regie-controls";
@@ -69,8 +70,16 @@ function BrowserSourceRow({ config, status, error, onAdd, onRemove, onReload, on
     setUrl(config.url);
   }
   const added = status.active;
+  // Removal asks first; showing or hiding never does (instant and reversible).
+  const [removal, setRemoval] = useState<RemovalPhase>("idle");
+  if (!added && removal !== "idle") setRemoval("idle");
+  const stepRemoval = (event: RemovalEvent) => {
+    const step = removalStep(removal, event);
+    setRemoval(step.phase);
+    if (step.remove) onRemove();
+  };
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5" onKeyDown={(e) => e.key === "Escape" && removal === "confirming" && stepRemoval("cancel")}>
       <div className="flex flex-wrap items-center gap-1.5">
         {added && (
           <EyeBtn
@@ -98,7 +107,7 @@ function BrowserSourceRow({ config, status, error, onAdd, onRemove, onReload, on
             <Btn variante="ghost" className={smallBtn} onClick={onReload}>
               {t.regie.browserReload}
             </Btn>
-            <Btn variante="dangerGhost" className={smallBtn} onClick={onRemove}>
+            <Btn variante="dangerGhost" className={smallBtn} disabled={removal === "confirming"} onClick={() => stepRemoval("ask")}>
               {t.regie.removeSource}
             </Btn>
           </>
@@ -108,6 +117,23 @@ function BrowserSourceRow({ config, status, error, onAdd, onRemove, onReload, on
           </Btn>
         )}
       </div>
+      {added && removal === "confirming" && (
+        <div role="alertdialog" aria-label={t.regie.removeConfirmTitle} className="ml-9 rounded-lg bg-err-bg px-3 py-2.5">
+          <p className="m-0 font-semibold text-[#7a1f20]">{t.regie.removeConfirmTitle}</p>
+          <p className="m-0 mb-2 text-[0.85rem] text-[#7a1f20]">
+            {t.regie.removeConfirmHelp}
+            {config.visible ? ` ${t.regie.removeConfirmShown}` : ""}
+          </p>
+          <div className="flex gap-2">
+            <Btn variante="danger" className={smallBtn} onClick={() => stepRemoval("confirm")}>
+              {t.regie.removeConfirm}
+            </Btn>
+            <Btn variante="ghost" className={smallBtn} autoFocus onClick={() => stepRemoval("cancel")}>
+              {t.regie.removeKeep}
+            </Btn>
+          </div>
+        </div>
+      )}
       {added && (
         <div className="flex flex-wrap items-center gap-1.5 pl-9">
           <select
