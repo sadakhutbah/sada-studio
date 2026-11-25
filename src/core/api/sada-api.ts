@@ -345,7 +345,7 @@ function normalizeSlot(raw: unknown): Slot | null {
 /** Is the workstation check `id` explicitly bad or good? `undefined` when it has not run (never a false problem). */
 const flag = (checks: HealthCheck[], id: string): boolean | undefined => checks.find((c) => c.id === id)?.ok;
 
-/** Heartbeat body as the contract describes it (docs/studio-devices.md). */
+/** Heartbeat body as the contract describes it (`docs/studio-devices.md` of the sada repository). */
 export function toWireReport(r: HeartbeatReport): Record<string, unknown> {
   const checks = r.health.checks;
   const health: Record<string, boolean> = {};

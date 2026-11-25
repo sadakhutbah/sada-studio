@@ -132,7 +132,7 @@ export interface LiveStatus {
 export type SetupOrchestrator = "waking" | "ready" | "unreachable";
 
 /**
- * Answer of `POST /studio/setup` (docs/studio-devices.md): the lease, whether the orchestrator answers, whether a
+ * Answer of `POST /studio/setup` (`docs/studio-devices.md` of the sada repository): the lease, whether the orchestrator answers, whether a
  * real live is on air (the programme view is then the real broadcast) and whether the programme can be watched.
  * Protocol data only: the application writes its own sentences.
  */

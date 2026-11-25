@@ -9,6 +9,7 @@ import type {
   TransitionMode,
 } from "@core/api/types";
 import { meterPosition } from "@core/audio/meter";
+import { Poller, WriteFence, backoffDelayMs } from "@core/regie/poller";
 import { bridge } from "../bridge";
 import type { RegieLiveView } from "../regie-preview";
 import { resolveRegieShortcut } from "../regie-shortcuts";
@@ -29,6 +30,11 @@ const FALLBACK_SCENES: RegieScene[] = [
   { id: "termine", kind: "slate", label: t.regie.scene.ended },
 ];
 
+const POLL_MS = 3000;
+const POLL_MAX_MS = 30_000;
+/** Consecutive failed polls before the data shown is flagged as out of date. */
+const STALE_AFTER_FAILURES = 2;
+
 const CORNERS: OverlayCorner[] = ["tl", "tr", "bl", "br"];
 
 const inputCls =
@@ -40,6 +46,8 @@ export interface RegieAudioProps {
   level: { rms: number; peak: number };
   muted: boolean;
   onToggleMute: () => void;
+  /** The last mute change the server refused or never received (the local state was rolled back). */
+  error?: string | null;
 }
 
 export interface RegiePanelProps {
@@ -49,7 +57,7 @@ export interface RegiePanelProps {
 }
 
 /** Level meter + mute button of the Régie panel. */
-export function AudioStrip({ level, muted, onToggleMute }: RegieAudioProps) {
+export function AudioStrip({ level, muted, onToggleMute, error }: RegieAudioProps) {
   const shown = muted ? -100 : level.rms;
   return (
     <div className="flex flex-col gap-1.5">
@@ -80,6 +88,11 @@ export function AudioStrip({ level, muted, onToggleMute }: RegieAudioProps) {
           {muted ? t.regie.unmute : t.regie.mute}
         </Btn>
       </div>
+      {error && (
+        <p role="alert" className="m-0 text-[0.82rem] text-live">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
@@ -138,6 +151,8 @@ export function RegiePanel({ audio, onLiveChange }: RegiePanelProps) {
   const [bannerTitle, setBannerTitle] = useState("");
   const [bannerSubtitle, setBannerSubtitle] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pollFailures, setPollFailures] = useState(0);
+  const fence = useRef(new WriteFence());
   const [err, setErr] = useState<string | null>(null);
 
   function hydrateOverlays(ov?: LiveOverlays, updateFields = false) {
@@ -167,33 +182,44 @@ export function RegiePanel({ audio, onLiveChange }: RegiePanelProps) {
         if (active) setErr(e instanceof Error ? e.message : String(e));
       });
 
-    const id = window.setInterval(() => {
-      bridge.regie
-        .status()
-        .then((s) => {
-          if (!active) return;
-          setStatus(s);
-          if (s.transition === "fade" || s.transition === "cut") setTransition(s.transition);
-          if (s.overlays) setOverlays(s.overlays);
-        })
-        .catch(() => {
-          /* silent poll */
-        });
-    }, 3000);
+    const poller = new Poller({
+      run: async () => {
+        const stillCurrent = fence.current.begin();
+        const s = await bridge.regie.status();
+        // A command issued while this poll was in flight wins: its own answer already refreshed the state.
+        if (!active || !stillCurrent()) return;
+        setStatus(s);
+        if (s.transition === "fade" || s.transition === "cut") setTransition(s.transition);
+        if (s.overlays) setOverlays(s.overlays);
+      },
+      delayMs: backoffDelayMs(POLL_MS, POLL_MAX_MS),
+      isHidden: () => document.hidden,
+      onFailures: (n) => active && setPollFailures(n),
+    });
+    // The first poll is the `get()` above; the loop starts after one interval.
+    const first = window.setTimeout(() => poller.start(), POLL_MS);
+    const onVisibility = () => {
+      if (!document.hidden) poller.wake();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
       active = false;
-      window.clearInterval(id);
+      window.clearTimeout(first);
+      poller.stop();
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
 
   async function sendCmd(cmd: string, arg?: string, tr?: TransitionMode) {
+    fence.current.bump();
     setBusy(true);
     setErr(null);
     try {
       await bridge.regie.command(cmd, arg, tr);
       const s = await bridge.regie.status();
       setStatus(s);
+      setPollFailures(0);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -215,6 +241,7 @@ export function RegiePanel({ audio, onLiveChange }: RegiePanelProps) {
   });
 
   async function changeTransition(mode: TransitionMode) {
+    fence.current.bump();
     setTransition(mode);
     setErr(null);
     try {
@@ -226,6 +253,7 @@ export function RegiePanel({ audio, onLiveChange }: RegiePanelProps) {
   }
 
   async function updateOverlay(kind: OverlayKind, payload: Record<string, unknown>) {
+    fence.current.bump();
     setBusy(true);
     setErr(null);
     try {
@@ -277,6 +305,11 @@ export function RegiePanel({ audio, onLiveChange }: RegiePanelProps) {
   return (
     <Card title={t.regie.title}>
       <div className="flex flex-col gap-3">
+        {pollFailures >= STALE_AFTER_FAILURES && (
+          <div role="status" className="rounded-[7px] border border-warn/40 bg-warn-bg px-2.5 py-1.5 text-[0.84rem] text-warn">
+            {t.regie.stale}
+          </div>
+        )}
         {displayErr && (
           <div className="rounded-[7px] border border-live/40 bg-err-bg px-2.5 py-1.5 text-[0.84rem] text-[#7a1f20]">
             {displayErr}
@@ -314,6 +347,7 @@ export function RegiePanel({ audio, onLiveChange }: RegiePanelProps) {
                 variante={scene === s.id ? "plein" : "ghost"}
                 className={`${smallBtn} ${staged === s.id && scene !== s.id ? "ring-1 ring-leaf" : ""}`}
                 disabled={busy || !reachable}
+                data-regie-scene={s.id}
                 onClick={() => {
                   setStaged(s.id);
                   void takeScene(s.id);

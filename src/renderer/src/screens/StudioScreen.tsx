@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StreamKind } from "@core/api/types";
 import { meterPosition } from "@core/audio/meter";
 import { InputAudioMixer } from "@core/audio/mixer";
+import { toggleMuteSynced } from "@core/audio/mute-sync";
 import { formatCountdown, formatWhen } from "@core/kiosk/format";
 import { isActive } from "@core/session/machine";
 import type { SourceOptions } from "@core/sources/types";
@@ -47,10 +48,13 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
     if (stream) mixer.mix([stream]);
   }, [mixer, stream]);
   useEffect(() => () => mixer.dispose(), [mixer]);
+  const [muteError, setMuteError] = useState<string | null>(null);
   const toggleMute = () => {
-    const next = mixer.toggleMute();
-    // Best effort: the orchestrator mirrors the state so the web Régie shows it too.
-    void bridge.regie.setMute(next).catch(() => undefined);
+    setMuteError(null);
+    // The orchestrator mirrors the state so the web Régie shows it too; if it refuses, the local state goes back.
+    void toggleMuteSynced(mixer, bridge.regie.setMute).then((e) => {
+      if (e) setMuteError(`${fr.regie.muteFailed} ${e.message}`.trim());
+    });
   };
   const now = useNow(true);
   const video = useRef<HTMLVideoElement>(null);
@@ -63,7 +67,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   // Setup mode: the orchestrator's real programme next to the local monitor (see components/SetupProgramView).
   const setup = useSetupMode();
   // The server's own overlay layer over the local monitor; refetched at once on any overlay change.
-  const overlayLayer = useOverlayLayer(regieView !== null, `${setup.wanted ? "setup" : "live"}|${overlaysKey(regieView?.overlays)}`);
+  const overlayLayer = useOverlayLayer(regieView !== null, overlaysKey(regieView?.overlays), setup.wanted ? "setup" : "live");
 
   const update = (patch: Partial<Prefs>) =>
     setPrefs((p) => {
@@ -187,6 +191,29 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   const conflict = kiosk.conflict?.message ?? (state.errorCode === "conflict" ? state.error : null);
   const since = kiosk.lastSeenAt ? new Date(kiosk.lastSeenAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "";
 
+  // The local monitor (capture + server overlay layer): one element, shown alone or next to the programme in setup mode.
+  const monitor = (
+        <div className={`relative aspect-video overflow-hidden rounded-t-[10px] bg-night ${onAir ? "max-h-[calc(100vh-17rem)] min-h-64 w-full" : ""}`}>
+          <video ref={video} autoPlay muted playsInline className="size-full object-contain" />
+          <RegiePreviewLayer view={regieView} layer={overlayLayer} />
+          {!stream && (
+            <div className="absolute inset-0 grid place-content-center gap-3 px-6 text-center text-night-muted">
+              <p className="m-0">{captureError ? `${captureError} ${fr.preview.retry}` : fr.preview.empty}</p>
+              {captureError === t("media.deniedSystem") && (
+                <button type="button" className="mx-auto underline" onClick={() => void window.studio.media.openSettings("microphone")}>
+                  {fr.preview.openSettings}
+                </button>
+              )}
+            </div>
+          )}
+          {state.status === "reconnecting" && (
+            <p className="absolute inset-x-0 bottom-0 m-0 bg-warn-bg px-4 py-2 text-[0.9rem] text-warn">
+              {state.error} {pill.label}
+            </p>
+          )}
+        </div>
+  );
+
   return (
     <div className="min-h-screen">
       <header className="bg-night text-night-ink shadow-[0_1px_0_rgba(0,0,0,0.2)]">
@@ -236,25 +263,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
               <div className="grid gap-3 p-3 md:grid-cols-2">
                 <div className="min-w-0 overflow-hidden rounded-[10px] border border-line">
                   <p className="m-0 px-4.5 py-2 text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-green">{t("setup.local")}</p>
-            <div className={`relative aspect-video overflow-hidden rounded-t-[10px] bg-night ${onAir ? "max-h-[calc(100vh-17rem)] min-h-64 w-full" : ""}`}>
-              <video ref={video} autoPlay muted playsInline className="size-full object-contain" />
-              <RegiePreviewLayer view={regieView} layer={overlayLayer} />
-              {!stream && (
-                <div className="absolute inset-0 grid place-content-center gap-3 px-6 text-center text-night-muted">
-                  <p className="m-0">{captureError ? `${captureError} ${fr.preview.retry}` : fr.preview.empty}</p>
-                  {captureError === t("media.deniedSystem") && (
-                    <button type="button" className="mx-auto underline" onClick={() => void window.studio.media.openSettings("microphone")}>
-                      {fr.preview.openSettings}
-                    </button>
-                  )}
-                </div>
-              )}
-              {state.status === "reconnecting" && (
-                <p className="absolute inset-x-0 bottom-0 m-0 bg-warn-bg px-4 py-2 text-[0.9rem] text-warn">
-                  {state.error} {pill.label}
-                </p>
-              )}
-            </div>
+                  {monitor}
                 </div>
                 <div className="min-w-0 overflow-hidden rounded-[10px] border border-line">
                   <p className="m-0 px-4.5 py-2 text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-green">{t("setup.program")}</p>
@@ -263,25 +272,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
                 </div>
               </div>
             ) : (
-            <div className={`relative aspect-video overflow-hidden rounded-t-[10px] bg-night ${onAir ? "max-h-[calc(100vh-17rem)] min-h-64 w-full" : ""}`}>
-              <video ref={video} autoPlay muted playsInline className="size-full object-contain" />
-              <RegiePreviewLayer view={regieView} layer={overlayLayer} />
-              {!stream && (
-                <div className="absolute inset-0 grid place-content-center gap-3 px-6 text-center text-night-muted">
-                  <p className="m-0">{captureError ? `${captureError} ${fr.preview.retry}` : fr.preview.empty}</p>
-                  {captureError === t("media.deniedSystem") && (
-                    <button type="button" className="mx-auto underline" onClick={() => void window.studio.media.openSettings("microphone")}>
-                      {fr.preview.openSettings}
-                    </button>
-                  )}
-                </div>
-              )}
-              {state.status === "reconnecting" && (
-                <p className="absolute inset-x-0 bottom-0 m-0 bg-warn-bg px-4 py-2 text-[0.9rem] text-warn">
-                  {state.error} {pill.label}
-                </p>
-              )}
-            </div>
+              monitor
             )}
             <div className="px-4.5 py-3">
               {ipMode && capture && (
@@ -365,8 +356,11 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
               <Btn onClick={setup.open}>{t("setup.open")}</Btn>
             )}
           </Card>
-          {/* Remounted on a mode change: the panel reads the rehearsal's scenes and overlays, or the live's again. */}
-          <RegiePanel key={setup.wanted ? "setup" : "live"} onLiveChange={setRegieView} audio={{ level, muted, onToggleMute: toggleMute }} />
+          {/* Remounted on a mode change: the panel reads the rehearsal's scenes and overlays, or the live's again.
+              While the setup mode is being entered it is not mounted: its first read would still address the live. */}
+          {(!setup.wanted || setup.state) && (
+            <RegiePanel key={setup.wanted ? "setup" : "live"} onLiveChange={setRegieView} audio={{ level, muted, onToggleMute: toggleMute, error: muteError }} />
+          )}
           <ProjectorPanel stream={stream} onAir={onAir} prefs={prefs} setPrefs={update} />
           {kiosk.stopPending && <p className="m-0 text-[0.85rem] text-muted">{fr.stop.pending}</p>}
           {state.status === "error" && state.error && state.errorCode !== "conflict" && <ErrorBox>{state.error}</ErrorBox>}

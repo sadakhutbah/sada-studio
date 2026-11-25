@@ -145,6 +145,8 @@ export const fr = {
     title: "Régie",
     scenes: "Scènes",
     offline: "Orchestrateur hors ligne",
+    stale: "Régie injoignable : les informations affichées peuvent être périmées.",
+    muteFailed: "Le son n'a pas pu être coupé ou rétabli côté serveur : état local rétabli.",
     auto: "Auto",
     take: "À l'antenne",
     transition: "Transition",

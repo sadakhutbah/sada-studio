@@ -97,7 +97,7 @@ export interface StudioBridge {
   whipOffer(sdp: string): Promise<IpcResult<{ answer: string; resource: string }>>;
   whipPatch(resource: string, fragment: string): Promise<IpcResult<null>>;
   whipClose(resource: string): Promise<IpcResult<null>>;
-  /** Setup mode: the programme as the orchestrator composes it, before any live (see docs/studio-devices.md). */
+  /** Setup mode: the programme as the orchestrator composes it, before any live (contract: `docs/studio-devices.md` of the sada repository). */
   setup: {
     enter(): Promise<IpcResult<SetupState>>;
     leave(): Promise<IpcResult<null>>;
