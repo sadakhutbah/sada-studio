@@ -64,7 +64,7 @@ const bridge: StudioBridge = {
       reload: () => ipcRenderer.invoke("sources:browser-reload"),
       setVisible: (visible) => ipcRenderer.invoke("sources:browser-set-visible", visible),
       stop: () => ipcRenderer.invoke("sources:browser-stop"),
-      audioSourceId: () => ipcRenderer.invoke("sources:browser-audio-id"),
+      armAudio: () => ipcRenderer.invoke("sources:browser-audio-arm"),
     },
     screen: {
       access: () => ipcRenderer.invoke("sources:screen-access"),
