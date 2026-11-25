@@ -155,6 +155,13 @@ export class SadaHttpApi implements StudioApi {
     });
   }
 
+  async setMute(muted: boolean): Promise<{ ok: boolean; muted: boolean; mic_muted: boolean }> {
+    return this.json<{ ok: boolean; muted: boolean; mic_muted: boolean }>("POST", `${API}/live/regie/mute`, {
+      json: { muted },
+      device: true,
+    });
+  }
+
   async setLiveOverlay(kind: OverlayKind, payload: Record<string, unknown>): Promise<OverlayUpdateResponse> {
     return this.json<OverlayUpdateResponse>("PATCH", `${API}/studio/live/overlays/${encodeURIComponent(kind)}`, {
       json: payload,
@@ -363,6 +370,10 @@ export class SadaApiClient {
 
   setTransition(mode: TransitionMode): Promise<{ ok: boolean; transition: TransitionMode }> {
     return this.request<{ ok: boolean; transition: TransitionMode }>("POST", `${API}/studio/live/transition`, { mode });
+  }
+
+  setMute(muted: boolean): Promise<{ ok: boolean; muted: boolean; mic_muted: boolean }> {
+    return this.request<{ ok: boolean; muted: boolean; mic_muted: boolean }>("POST", `${API}/live/regie/mute`, { muted });
   }
 
   setLiveOverlay(kind: OverlayKind, payload: Record<string, unknown>): Promise<OverlayUpdateResponse> {

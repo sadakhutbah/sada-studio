@@ -93,6 +93,7 @@ export interface StudioBridge {
     status(): Promise<IpcResult<LiveStatus>>;
     command(cmd: string, arg?: string, transition?: TransitionMode): Promise<IpcResult<LiveStatus>>;
     setTransition(mode: TransitionMode): Promise<IpcResult<{ ok: boolean; transition: TransitionMode }>>;
+    setMute(muted: boolean): Promise<IpcResult<{ ok: boolean; muted: boolean; mic_muted: boolean }>>;
     setOverlay(kind: OverlayKind, payload: Record<string, unknown>): Promise<IpcResult<OverlayUpdateResponse>>;
   };
 }

@@ -67,6 +67,7 @@ const bridge: StudioBridge = {
     status: () => ipcRenderer.invoke("regie:status"),
     command: (cmd, arg, transition) => ipcRenderer.invoke("regie:command", cmd, arg, transition),
     setTransition: (mode) => ipcRenderer.invoke("regie:set-transition", mode),
+    setMute: (muted) => ipcRenderer.invoke("regie:set-mute", muted),
     setOverlay: (kind, payload) => ipcRenderer.invoke("regie:set-overlay", kind, payload),
   },
 };

@@ -22,6 +22,7 @@ export const bridge = {
     command: async (cmd: string, arg?: string, transition?: TransitionMode) =>
       unwrap(await window.studio.regie.command(cmd, arg, transition)),
     setTransition: async (mode: TransitionMode) => unwrap(await window.studio.regie.setTransition(mode)),
+    setMute: async (muted: boolean) => unwrap(await window.studio.regie.setMute(muted)),
     setOverlay: async (kind: OverlayKind, payload: Record<string, unknown>) =>
       unwrap(await window.studio.regie.setOverlay(kind, payload)),
   },

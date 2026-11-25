@@ -148,6 +148,7 @@ export function registerIpc(version: string): Kiosk {
     run(() => api.sendLiveCommand(cmd, arg, tr)),
   );
   ipcMain.handle("regie:set-transition", (_e, mode: TransitionMode) => run(() => api.setTransition(mode)));
+  ipcMain.handle("regie:set-mute", (_e, muted: boolean) => run(() => api.setMute(Boolean(muted))));
   ipcMain.handle("regie:set-overlay", (_e, kind: OverlayKind, payload: Record<string, unknown>) =>
     run(() => api.setLiveOverlay(kind, payload)),
   );

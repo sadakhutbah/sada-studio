@@ -180,6 +180,11 @@ export const fr = {
     show: "Afficher",
     hide: "Masquer",
     apply: "Appliquer",
+    audio: "Audio entrant",
+    audioLevel: "Niveau audio entrant",
+    audioMuted: "Muet",
+    mute: "Couper le son",
+    unmute: "Réactiver le son",
   },
 } as const;
 

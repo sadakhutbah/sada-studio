@@ -116,6 +116,9 @@ export interface LiveStatus {
   override?: boolean;
   transition?: TransitionMode;
   overlays?: LiveOverlays;
+  mic?: boolean;
+  mic_muted?: boolean;
+  audio_level_db?: number | null;
   message?: string;
 }
 
@@ -129,12 +132,19 @@ export interface RegieScene {
   preview_url?: string;
 }
 
+export interface RegieAudioState {
+  mic_on: boolean;
+  muted: boolean;
+  level_db: number | null;
+}
+
 export interface RegieData {
   mosque?: string;
   slug?: string;
   status: LiveStatus;
   transition?: TransitionMode;
   scenes?: RegieScene[];
+  audio?: RegieAudioState;
   commands?: string[];
   extend_minutes?: string[];
   overlays?: LiveOverlays;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   LiveOverlays,
   LiveStatus,
@@ -16,6 +16,7 @@ import type {
   BrowserSourceStatus,
   DesktopSourceInfo,
 } from "@core/sources/types";
+import { meterPosition } from "@core/audio/meter";
 import { bridge } from "../bridge";
 import { resolveRegieShortcut } from "../regie-shortcuts";
 import { Btn, Card } from "../ui";
@@ -43,17 +44,66 @@ const inputCls =
   "rounded-[7px] border border-night-line bg-night-deep px-2.5 py-1.5 text-[0.85rem] text-night-ink placeholder:text-night-dim";
 const smallBtn = "min-h-8 px-2.5 py-1 text-[0.84rem]";
 
+/** Incoming-audio strip: real-time level (dBFS) and mute of the stream feeding the broadcast. */
+export interface RegieAudioProps {
+  level: { rms: number; peak: number };
+  muted: boolean;
+  onToggleMute: () => void;
+}
+
 export interface RegiePanelProps {
-  browserSource: BrowserSourceConfig;
-  browserStatus: BrowserSourceStatus;
-  onBrowserSourceChange: (next: BrowserSourceConfig) => void;
-  onBrowserSourceReload: () => void;
-  screenActive: boolean;
-  screenSourceId: string;
-  desktopSources: DesktopSourceInfo[];
-  onScreenToggle: () => void;
-  onScreenSelect: (sourceId: string) => void;
-  onScreenRefresh: () => void;
+  audio?: RegieAudioProps;
+  /** Local sources (web source, screen share): the section is hidden while these are not wired. */
+  browserSource?: BrowserSourceConfig;
+  browserStatus?: BrowserSourceStatus;
+  onBrowserSourceChange?: (next: BrowserSourceConfig) => void;
+  onBrowserSourceReload?: () => void;
+  screenActive?: boolean;
+  screenSourceId?: string;
+  desktopSources?: DesktopSourceInfo[];
+  onScreenToggle?: () => void;
+  onScreenSelect?: (sourceId: string) => void;
+  onScreenRefresh?: () => void;
+}
+
+const NO_BROWSER: BrowserSourceConfig = { url: "", visible: false, mode: "overlay", corner: "br", size: "md" };
+const NO_BROWSER_STATUS: BrowserSourceStatus = { active: false, loading: false, url: "", error: null };
+const noop = () => undefined;
+
+/** Level meter + mute button of the Régie panel. */
+export function AudioStrip({ level, muted, onToggleMute }: RegieAudioProps) {
+  const shown = muted ? -100 : level.rms;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-night-dim">
+        <span>{t.regie.audio}</span>
+        <span className="font-normal normal-case tracking-normal tabular-nums">
+          {muted ? t.regie.audioMuted : shown <= -99 ? "—" : `${Math.round(shown)} dB`}
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <div
+          role="meter"
+          aria-label={t.regie.audioLevel}
+          aria-valuemin={-60}
+          aria-valuemax={0}
+          aria-valuenow={Math.round(Math.max(-60, shown))}
+          className="h-2.5 flex-1 overflow-hidden rounded-full bg-night-deep"
+        >
+          <div
+            className="h-full rounded-full transition-[width] duration-75"
+            style={{
+              width: `${meterPosition(shown) * 100}%`,
+              background: muted ? "#6b7280" : level.peak > -3 ? "#ef4444" : level.peak > -12 ? "#eab308" : "#22c55e",
+            }}
+          />
+        </div>
+        <Btn variante={muted ? "plein" : "ghost"} className={smallBtn} aria-pressed={muted} onClick={onToggleMute}>
+          {muted ? t.regie.unmute : t.regie.mute}
+        </Btn>
+      </div>
+    </div>
+  );
 }
 
 function EyeBtn({
@@ -99,17 +149,19 @@ function EyeBtn({
 }
 
 export function RegiePanel({
-  browserSource,
-  browserStatus,
-  onBrowserSourceChange,
-  onBrowserSourceReload,
-  screenActive,
-  screenSourceId,
-  desktopSources,
-  onScreenToggle,
-  onScreenSelect,
-  onScreenRefresh,
+  audio,
+  browserSource = NO_BROWSER,
+  browserStatus = NO_BROWSER_STATUS,
+  onBrowserSourceChange = noop,
+  onBrowserSourceReload = noop,
+  screenActive = false,
+  screenSourceId = "",
+  desktopSources = [],
+  onScreenToggle = noop,
+  onScreenSelect = noop,
+  onScreenRefresh = noop,
 }: RegiePanelProps) {
+  const hasLocalSources = onBrowserSourceChange !== noop;
   const [data, setData] = useState<RegieData | null>(null);
   const [status, setStatus] = useState<LiveStatus | null>(null);
   const [staged, setStaged] = useState<string>("khutba");
@@ -121,12 +173,14 @@ export function RegiePanel({
   const [bannerTitle, setBannerTitle] = useState("");
   const [bannerSubtitle, setBannerSubtitle] = useState("");
   const [browserUrl, setBrowserUrl] = useState(browserSource.url);
+  const [prevSourceUrl, setPrevSourceUrl] = useState(browserSource.url);
+  // Prop change (reload, default) resets the field: state adjusted during render, not in an effect.
+  if (prevSourceUrl !== browserSource.url) {
+    setPrevSourceUrl(browserSource.url);
+    setBrowserUrl(browserSource.url);
+  }
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    setBrowserUrl(browserSource.url);
-  }, [browserSource.url]);
 
   function hydrateOverlays(ov?: LiveOverlays, updateFields = false) {
     if (!ov) return;
@@ -196,6 +250,11 @@ export function RegiePanel({
       await sendCmd("scene", sceneId, transition);
     }
   }
+  // Latest takeScene for the keyboard shortcut, without re-binding the listener every render.
+  const takeSceneRef = useRef(takeScene);
+  useEffect(() => {
+    takeSceneRef.current = takeScene;
+  });
 
   async function changeTransition(mode: TransitionMode) {
     setTransition(mode);
@@ -246,7 +305,7 @@ export function RegiePanel({
         if (sc) setStaged(sc.id);
       } else if (action.type === "take" && reachable && !busy) {
         e.preventDefault();
-        void takeScene(staged);
+        void takeSceneRef.current(staged);
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -312,7 +371,14 @@ export function RegiePanel({
           </div>
         </div>
 
+        {audio && (
+          <div className="border-t border-night-line pt-3">
+            <AudioStrip {...audio} />
+          </div>
+        )}
+
         {/* Sources locales (Source web & Partage d'écran) */}
+        {hasLocalSources && (
         <div className="flex flex-col gap-2.5 border-t border-night-line pt-3">
           <div className="flex items-center justify-between text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-night-dim">
             <span>{t.regie.localSources}</span>
@@ -453,6 +519,7 @@ export function RegiePanel({
             </Btn>
           </div>
         </div>
+        )}
 
         {/* Incrustations serveur */}
         <div className="flex flex-col gap-2.5 border-t border-night-line pt-3">
