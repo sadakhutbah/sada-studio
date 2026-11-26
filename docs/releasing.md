@@ -6,7 +6,7 @@
 npm run dist       # installer for the current OS, in dist/
 ```
 
-Targets: Windows (NSIS), macOS (dmg, zip, one per architecture: arm64 and x64, no universal build), Linux (AppImage). The Windows installer cannot be built on Linux without `wine`; CI builds all three. The `appId` (`com.sada.sadakhutbah`) identifies the app to the OS and to updates: do not change it.
+Targets: Windows (NSIS), macOS (dmg, zip, one per architecture: arm64 and x64, no universal build; each user downloads one file of about 125 MB instead of 290 MB), Linux (AppImage). The Windows installer cannot be built on Linux without `wine`; CI builds all three. The `appId` (`com.sada.sadakhutbah`) identifies the app to the OS and to updates: do not change it.
 
 Builds are unsigned unless signing secrets are provided to the workflow (`MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` for macOS; `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD` for Windows). Unsigned macOS builds are blocked by Gatekeeper and **cannot auto-update**; unsigned Windows builds trigger a SmartScreen warning.
 
