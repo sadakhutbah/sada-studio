@@ -1,11 +1,12 @@
 import type {
+  AssetFetch,
   LiveStatus,
   MuteResponse,
   TransitionResponse,
   OverlayKind,
-  OverlayLayerFetch,
   OverlayUpdateResponse,
   RegieData,
+  ScreenFetch,
   SetupState,
   StreamMeta,
   TransitionMode,
@@ -19,6 +20,14 @@ import type { LocaleChoice, LocaleView } from "../core/locale";
 import type { ControlView } from "../core/control/settings";
 import type { ScreenAudioSupport } from "../core/sources/screen-audio";
 import type { BrowserSourceFrame, BrowserSourceStatus, DesktopSourceInfo, ScreenAccess } from "../core/sources/types";
+
+/** A filled template page to render (see `src/main/screen-render.ts`). */
+export interface ScreenRenderRequest {
+  key: string;
+  html: string;
+  transparent: boolean;
+  countdown: string | null;
+}
 
 /** Serializable result of an IPC call: errors keep their HTTP code (0 = network). */
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; status: number; message: string; code?: string };
@@ -103,6 +112,11 @@ export interface SourcesBridge {
     /** Whether the shared screen's sound can be captured on this system, and why not otherwise. */
     audioSupport(): Promise<IpcResult<ScreenAudioSupport>>;
   };
+  /** The mosque's template screens, rendered in their own hidden window (never the web source's). */
+  scene: {
+    /** Renders a filled template page: one raw frame. */
+    render(req: ScreenRenderRequest): Promise<IpcResult<BrowserSourceFrame>>;
+  };
 }
 
 /** Global shortcuts and local control API (Stream Deck, Companion): settings, and the actions the window runs. */
@@ -175,8 +189,10 @@ export interface StudioBridge {
     setTransition(mode: TransitionMode): Promise<IpcResult<TransitionResponse>>;
     setMute(muted: boolean): Promise<IpcResult<MuteResponse>>;
     setOverlay(kind: OverlayKind, payload: Record<string, unknown>): Promise<IpcResult<OverlayUpdateResponse>>;
-    /** The server-drawn overlay layer; `etag`: the copy already held (answered `changed: false` if current). */
-    overlayLayer(etag: string | null): Promise<IpcResult<OverlayLayerFetch>>;
+    /** Programme assets, revalidated by ETag (`etag`: the copy already held, answered `changed: false` if current). */
+    logo(etag: string | null): Promise<IpcResult<AssetFetch>>;
+    sceneImage(id: string, setup: boolean, etag: string | null): Promise<IpcResult<AssetFetch>>;
+    screen(id: string, setup: boolean, etag: string | null): Promise<IpcResult<ScreenFetch>>;
   };
 }
 

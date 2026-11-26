@@ -13,7 +13,7 @@ import { FileAudioOffsetStore, FileCaptureSettingsStore } from "./capture-files"
 import { CaptureService } from "./capture-service";
 import { FilePersistStore, SafeDeviceStore } from "./device-store";
 import { resolveFfmpeg } from "./ffmpeg-io";
-import { isResourcePath, isTransition, parseOverlay, parseRegieCommand } from "./ipc-guards";
+import { etagOf, isResourcePath, isSceneId, isTransition, parseOverlay, parseRegieCommand } from "./ipc-guards";
 import { log } from "./log";
 import { startUpdater } from "./updater";
 import { collectWindowsFacts } from "./windows-facts";
@@ -175,8 +175,19 @@ export function registerIpc(version: string): Kiosk {
       return api.setLiveOverlay(o.kind, o.payload);
     }),
   );
-  ipcMain.handle("regie:overlay-layer", (_e, etag: unknown) =>
-    run(() => api.getOverlayLayer(typeof etag === "string" && etag.length <= 200 ? etag : null)),
+  // Programme assets the studio composes with (CONTRACT.md): mosque logo, engine picture of a scene, template screen.
+  ipcMain.handle("regie:logo", (_e, etag: unknown) => run(() => api.getLiveLogo(etagOf(etag))));
+  ipcMain.handle("regie:scene-image", (_e, id: unknown, setup: unknown, etag: unknown) =>
+    run(async () => {
+      if (!isSceneId(id)) throw new ApiError(0, t("ipc.invalidCommand"));
+      return api.getSceneImage(id, setup === true, etagOf(etag));
+    }),
+  );
+  ipcMain.handle("regie:screen", (_e, id: unknown, setup: unknown, etag: unknown) =>
+    run(async () => {
+      if (!isSceneId(id)) throw new ApiError(0, t("ipc.invalidCommand"));
+      return api.getScreen(id, setup === true, etagOf(etag));
+    }),
   );
 
   supervisor.boot();

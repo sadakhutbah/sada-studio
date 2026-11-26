@@ -6,13 +6,15 @@ export interface CompositorDemand {
   browserVisible: boolean;
   /** The programme is the shared screen or window. */
   screenActive: boolean;
+  /** The studio composes the programme and something is drawn over or instead of the camera (scene, overlay, fade). */
+  program?: boolean;
 }
 
 export type OutputMode = "raw" | "canvas";
 
 /** Canvas (drawn, re-captured) only when something has to be composited; otherwise the source stream goes out untouched. */
 export function chooseOutput(d: CompositorDemand): OutputMode {
-  return d.browserVisible || d.screenActive ? "canvas" : "raw";
+  return d.browserVisible || d.screenActive || d.program === true ? "canvas" : "raw";
 }
 
 /** New canvas size when the video's real resolution differs from it, null when nothing has to change (a resize clears the canvas). */

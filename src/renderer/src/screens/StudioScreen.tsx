@@ -13,7 +13,7 @@ import { formatBitrate, formatDuration } from "@core/stats";
 import type { KioskSnapshot } from "@shared/ipc";
 import type { CalibrationView, CaptureSettings } from "@core/capture/settings";
 import { normalizeDelay } from "@core/capture/types";
-import { useBroadcast, useCapture, useDevices, useHealth, useKeeper, useLevel, useNow, useOverlayLayer, useReporter, useSetupMode } from "../hooks";
+import { useBroadcast, useCapture, useDevices, useHealth, useKeeper, useLevel, useNow, useReporter, useSetupMode } from "../hooks";
 import { loadPrefs, savePrefs, webcamDelayOf, webcamPairKey, type Prefs } from "../prefs";
 import { intlLocale } from "@core/messages";
 import { fill, str } from "../strings";
@@ -21,15 +21,13 @@ import { t } from "@core/messages";
 import { Brand, Btn, Card, ErrorBox, Field, inputClass, Kicker, StatusPill, Title, type PillKey } from "../ui";
 import { bridge } from "../bridge";
 import { runControlAction, type ControlContext } from "../control-actions";
-import { createStudioStore, muteWarningText, storeControl, useStoreValue } from "../store";
+import { createStudioStore, muteWarningText, selectProgramView, storeControl, useStoreValue, watchProgramView } from "../store";
 import { toggleMic } from "@core/regie/thunks";
 import { useLocalSources } from "../local-sources";
 import { RegiePanel } from "../components/RegiePanel";
 import { RegiePreviewLayer } from "../components/RegiePreviewLayer";
 import { SetupProgramView } from "../components/SetupProgramView";
 import { IDLE_LIMIT_MS } from "@core/setup/view";
-import { overlaysKey } from "@core/setup/overlay-layer";
-import type { RegieLiveView } from "../regie-preview";
 import { HealthPanel } from "./HealthPanel";
 import { ProjectorPanel } from "./ProjectorPanel";
 import { SettingsPanel } from "./SettingsPanel";
@@ -77,7 +75,8 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   );
   const now = useNow(true);
   const video = useRef<HTMLVideoElement>(null);
-  const [regieView, setRegieView] = useState<RegieLiveView | null>(null);
+  // What the compositor draws, from the Regie store (the monitor badge reads the same state).
+  const program = useStoreValue(regieStore, selectProgramView);
   const [confirmStop, setConfirmStop] = useState(false);
   const [confirmUnpair, setConfirmUnpair] = useState(false);
   const [manualError, setManualError] = useState("");
@@ -85,8 +84,12 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Setup mode: the orchestrator's real programme next to the local monitor (see components/SetupProgramView).
   const setup = useSetupMode();
-  // The server's own overlay layer over the local monitor; refetched at once on any overlay change.
-  const overlayLayer = useOverlayLayer(regieView !== null, overlaysKey(regieView?.overlays), setup.wanted ? "setup" : "live");
+  // The studio composes the programme itself (scenes, overlays) from the Régie store's optimistic state: the monitor
+  // shows the composed canvas, i.e. what goes on air. No fetch of the server's layer any more.
+  useEffect(() => watchProgramView(regieStore, (view) => compositor.setProgram(view)), [regieStore, compositor]);
+  useEffect(() => compositor.setRehearsal(setup.wanted), [compositor, setup.wanted]);
+  // Setup mode: the orchestrator's own copy (WHEP) is optional, the local monitor already shows scenes and overlays.
+  const [showProgram, setShowProgram] = useState(false);
 
   const update = (patch: Partial<Prefs>) =>
     setPrefs((p) => {
@@ -282,11 +285,11 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   const conflict = kiosk.conflict?.message ?? (state.errorCode === "conflict" ? state.error : null);
   const since = kiosk.lastSeenAt ? new Date(kiosk.lastSeenAt).toLocaleTimeString(intlLocale(), { hour: "2-digit", minute: "2-digit" }) : "";
 
-  // The local monitor (capture + server overlay layer): one element, shown alone or next to the programme in setup mode.
+  // The local monitor (the composed programme): one element, shown alone or next to the programme in setup mode.
   const monitor = (
         <div className={`relative aspect-video overflow-hidden rounded-t-[10px] bg-night ${onAir ? "max-h-[calc(100vh-17rem)] min-h-64 w-full" : ""}`}>
           <video ref={video} autoPlay muted playsInline className="size-full object-contain" />
-          <RegiePreviewLayer view={regieView} layer={overlayLayer} />
+          <RegiePreviewLayer view={program} />
           {!stream && (
             <div className="absolute inset-0 grid place-content-center gap-3 px-6 text-center text-night-muted">
               <p className="m-0">{captureError ? `${captureError} ${str.preview.retry}` : str.preview.empty}</p>
@@ -351,16 +354,23 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
         <div className="grid content-start gap-4">
           <Card className="p-0!">
             {setup.wanted ? (
-              <div className="grid gap-3 p-3 md:grid-cols-2">
+              <div className={`grid gap-3 p-3 ${showProgram ? "md:grid-cols-2" : ""}`}>
                 <div className="min-w-0 overflow-hidden rounded-[10px] border border-line">
-                  <p className="m-0 px-4.5 py-2 text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-green">{t("setup.local")}</p>
+                  <div className="flex items-center justify-between gap-3 px-4.5 py-2">
+                    <p className="m-0 text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-green">{t("setup.local")}</p>
+                    <button type="button" className="text-[0.8rem] text-muted underline" onClick={() => setShowProgram((v) => !v)}>
+                      {showProgram ? t("setup.hideProgram") : t("setup.showProgram")}
+                    </button>
+                  </div>
                   {monitor}
                 </div>
-                <div className="min-w-0 overflow-hidden rounded-[10px] border border-line">
-                  <p className="m-0 px-4.5 py-2 text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-green">{t("setup.program")}</p>
-                  <SetupProgramView phase={setup.phase} state={setup.state} onPlaying={setup.setPlaying} />
-                  {setup.phase === "watching" && !setup.state?.live && <p className="m-0 px-4.5 py-2 text-[0.8rem] text-muted">{t("setup.neutralCamera")}</p>}
-                </div>
+                {showProgram && (
+                  <div className="min-w-0 overflow-hidden rounded-[10px] border border-line">
+                    <p className="m-0 px-4.5 py-2 text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-green">{t("setup.program")}</p>
+                    <SetupProgramView phase={setup.phase} state={setup.state} onPlaying={setup.setPlaying} />
+                    {setup.phase === "watching" && !setup.state?.live && <p className="m-0 px-4.5 py-2 text-[0.8rem] text-muted">{t("setup.neutralCamera")}</p>}
+                  </div>
+                )}
               </div>
             ) : (
               monitor
@@ -451,7 +461,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
               While the setup mode is being entered it is not mounted: its first read would still address the live. */}
           {(!setup.wanted || setup.state) && (
             <Provider store={regieStore}>
-              <RegiePanel key={setup.wanted ? "setup" : "live"} onLiveChange={setRegieView} localSources={local.props} audio={{ level, muted: mic.muted, onToggleMute: toggleMute, error: muteWarningText(mic) }} />
+              <RegiePanel key={setup.wanted ? "setup" : "live"} localSources={local.props} audio={{ level, muted: mic.muted, onToggleMute: toggleMute, error: muteWarningText(mic) }} />
             </Provider>
           )}
           <ProjectorPanel stream={stream} onAir={onAir} prefs={prefs} setPrefs={update} />

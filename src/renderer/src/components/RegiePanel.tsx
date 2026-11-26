@@ -9,13 +9,11 @@ import {
   selectError,
   selectPending,
   selectPendingScene,
-  selectProgramView,
   selectScenes,
   selectStale,
   selectView,
 } from "@core/regie/state";
 import { applyOverlay, changeTransition, loadRegie, pollStatus, setAuto, takeScene, toggleOverlay } from "@core/regie/thunks";
-import type { RegieLiveView } from "../regie-preview";
 import { resolveRegieShortcut } from "../regie-shortcuts";
 import { useRegieDispatch, useRegieSelector } from "../store";
 import { Btn, Card } from "../ui";
@@ -43,8 +41,6 @@ export interface RegieAudioProps {
  * command is on its way shows `aria-busy`.
  */
 export interface RegiePanelProps {
-  /** Scene and overlays shown (optimistic `selectProgramView`): drawn over the monitor by the parent. */
-  onLiveChange?: (view: RegieLiveView) => void;
   audio?: RegieAudioProps;
   /** Local sources (web source, screen share), driven by the studio screen. */
   localSources?: LocalSourcesProps;
@@ -91,10 +87,9 @@ export function AudioStrip({ level, muted, onToggleMute, error }: RegieAudioProp
   );
 }
 
-export function RegiePanel({ audio, onLiveChange, localSources }: RegiePanelProps) {
+export function RegiePanel({ audio, localSources }: RegiePanelProps) {
   const dispatch = useRegieDispatch();
   const view = useRegieSelector(selectView);
-  const program = useRegieSelector(selectProgramView);
   const scenesList = useRegieSelector(selectScenes);
   const drafts = useRegieSelector(selectDrafts);
   const err = useRegieSelector(selectError);
@@ -138,10 +133,6 @@ export function RegiePanel({ audio, onLiveChange, localSources }: RegiePanelProp
   const isAuto = !view.override;
   const transition = view.transition;
   const overlays = view.overlays;
-
-  useEffect(() => {
-    onLiveChange?.(program);
-  }, [onLiveChange, program]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

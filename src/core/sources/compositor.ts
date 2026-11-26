@@ -1,8 +1,23 @@
+import type { SceneKind } from "../api/types";
 import type { OutputAudioMix } from "../audio/source-mix";
 import type { SceneCompositor } from "../extension-points";
+import {
+  layerOrder,
+  localCompositing,
+  needsTransition,
+  newTransitionFrame,
+  programNeedsCanvas,
+  TRANSITION_WAIT_MS,
+  transitionFrame,
+  type LayerFrame,
+} from "../program/logic";
+import { palette } from "../program/overlay-layout";
+import { cssFont, OverlayPainter, OVERLAY_FONTS } from "../program/overlay-painter";
+import { ProgramAssets, type FrameSink, type ProgramIO } from "../program/program-assets";
+import type { ProgramView } from "../program/types";
 import { computeBrowserSourceRect, DEFAULT_BROWSER_SOURCE } from "./browser-source";
 import { chooseOutput, nextCanvasSize, streamKey, type CompositorDemand, type OutputMode } from "./compositor-logic";
-import { bgraPremulToRgba } from "./frame-gate";
+import { FrameCanvas } from "./frame-canvas";
 import type { BrowserSourceConfig, BrowserSourceFrame, MediaSourceStrategy, SourceOptions, SourceSync } from "./types";
 
 const DEFAULT_WIDTH = 1280;
@@ -16,11 +31,33 @@ export interface OutputCompositor {
   /** Starts or pauses the drawing loop: nothing is drawn while the raw stream is what goes out. */
   setRunning(running: boolean): void;
   dispose(): void;
+  /** The programme (scenes, overlays) needs the canvas, whatever the web source and the screen do. */
+  programActive?(): boolean;
+  onProgramActiveChange?(cb: () => void): () => void;
+}
+
+/** Housekeeping of the programme's pictures (revalidation, template countdown, pre-rendering). */
+const PROGRAM_TICK_MS = 1_000;
+
+interface SceneTransition {
+  from: string;
+  fromKind: SceneKind;
+  fromLabel: string;
+  mode: "fade" | "cut";
+  waitSince: number;
+  startedAt: number | null;
+}
+
+function canvasSink(): FrameSink<HTMLCanvasElement> {
+  const f = new FrameCanvas();
+  return { source: f.canvas, put: (frame) => f.put(frame), release: () => f.release() };
 }
 
 /**
- * Composites the active video stream with an optional local Browser Source
- * (fullscreen or corner/size overlay) onto a continuous canvas MediaStream.
+ * Composites the programme onto a continuous canvas MediaStream, bottom to top: the active video stream (camera or
+ * shared screen), the current scene (full screen masking the camera, or banner over it, with the engine's fade), the
+ * local web source (fullscreen or corner overlay), then the overlays (logo, QR, free banner) drawn from the state.
+ * Scenes and overlays are drawn only while the studio composes (`compositing: "studio"`, or the setup view).
  *
  * The drawing is driven by a timer, not by requestAnimationFrame: rAF stops when the window is hidden (the app lives in
  * the notification area during a live), which would freeze the broadcast. The window keeps `backgroundThrottling: false`.
@@ -35,14 +72,34 @@ export class StudioSceneCompositor implements SceneCompositor, OutputCompositor 
   private timer: ReturnType<typeof setInterval> | null = null;
   private browserConfig: BrowserSourceConfig = { ...DEFAULT_BROWSER_SOURCE };
   /** The latest web-source frame, kept as a canvas (one `putImageData` per frame, no decoding, no allocation). */
-  private browserCanvas: HTMLCanvasElement | null = null;
-  private browserPixels: Uint8ClampedArray<ArrayBuffer> | null = null;
+  private browser: FrameCanvas | null = null;
   private hasBrowserFrame = false;
   private disposed = false;
 
   private width = DEFAULT_WIDTH;
   private height = DEFAULT_HEIGHT;
   private fps = DEFAULT_FPS;
+
+  // --- programme (scenes and overlays, see setProgram) ---
+  private program: ProgramView | null = null;
+  private rehearsal = false;
+  private readonly io: ProgramIO | null;
+  private assets: ProgramAssets<ImageBitmap, HTMLCanvasElement> | null = null;
+  private overlays: OverlayPainter | null = null;
+  private overlaysDirty = true;
+  private fontsEpoch = 0;
+  private fontsRequested = false;
+  private transition: SceneTransition | null = null;
+  private readonly tf = newTransitionFrame();
+  private readonly steady: LayerFrame = { visible: true, alpha: 1, dx: 0, dy: 0 };
+  private readonly fallbacks = new Map<string, HTMLCanvasElement>();
+  private programTimer: ReturnType<typeof setInterval> | null = null;
+  private active = false;
+  private readonly activeListeners = new Set<() => void>();
+
+  constructor(opts: { io?: ProgramIO } = {}) {
+    this.io = opts.io ?? null;
+  }
 
   /**
    * Size and frame rate of the picture (the quality chosen for the mosque). Taken when the canvas is created and by the
@@ -54,6 +111,106 @@ export class StudioSceneCompositor implements SceneCompositor, OutputCompositor 
     this.fps = p.fps;
   }
 
+
+
+  /**
+   * The programme to compose (scene, scenes, overlays, who composes). Called on every change of the Régie state;
+   * a scene change starts the transition (fade or cut) once the incoming scene's picture is there (1.5 s at most).
+   */
+  setProgram(view: ProgramView | null): void {
+    const prev = this.program;
+    this.program = view;
+    const local = localCompositing(view, this.rehearsal);
+    if (view && prev && local && prev.scene !== view.scene) {
+      const mode = view.transition ?? "fade";
+      const fromKind = this.transition && this.transition.startedAt === null ? this.transition.fromKind : prev.sceneKind;
+      this.transition = needsTransition(fromKind, view.sceneKind, mode)
+        ? {
+            from: prev.scene,
+            fromKind,
+            fromLabel: prev.scenes.find((s) => s.id === prev.scene)?.label ?? "",
+            mode,
+            waitSince: performance.now(),
+            startedAt: null,
+          }
+        : null;
+    } else if (!local) {
+      this.transition = null;
+    }
+    this.overlaysDirty = true;
+    this.programChanged();
+  }
+
+  /** Setup view open: the studio composes the rehearsal programme whatever `compositing` says. */
+  setRehearsal(on: boolean): void {
+    if (on === this.rehearsal) return;
+    this.rehearsal = on;
+    this.assets?.setScope(on);
+    this.programChanged();
+  }
+
+  /** The canvas is needed by the programme (something drawn over or instead of the camera, or a transition running). */
+  programActive(): boolean {
+    return this.active;
+  }
+
+  onProgramActiveChange(cb: () => void): () => void {
+    this.activeListeners.add(cb);
+    return () => this.activeListeners.delete(cb);
+  }
+
+  private programChanged(): void {
+    const local = localCompositing(this.program, this.rehearsal) && this.io !== null && typeof document !== "undefined";
+    if (local) {
+      this.ensureProgramTools();
+      this.tickProgram();
+      this.programTimer ??= setInterval(() => this.tickProgram(), PROGRAM_TICK_MS);
+    } else if (this.programTimer !== null) {
+      clearInterval(this.programTimer);
+      this.programTimer = null;
+    }
+    this.updateActive();
+  }
+
+  private updateActive(): void {
+    const active = this.io !== null && programNeedsCanvas(this.program, this.rehearsal, this.transition !== null);
+    if (active === this.active) return;
+    this.active = active;
+    for (const cb of this.activeListeners) cb();
+  }
+
+  private ensureProgramTools(): void {
+    if (!this.assets && this.io) {
+      this.assets = new ProgramAssets<ImageBitmap, HTMLCanvasElement>({
+        io: this.io,
+        decode: (png) => createImageBitmap(new Blob([png as Uint8Array<ArrayBuffer>], { type: "image/png" })),
+        release: (b) => b.close(),
+        createSink: canvasSink,
+        onChange: (what) => {
+          if (what === "logo") this.overlaysDirty = true;
+        },
+      });
+      this.assets.setScope(this.rehearsal);
+    }
+    this.overlays ??= new OverlayPainter();
+    if (!this.fontsRequested && typeof document.fonts?.load === "function") {
+      this.fontsRequested = true;
+      void Promise.all(OVERLAY_FONTS.map((f) => document.fonts.load(f)))
+        .catch(() => undefined)
+        .then(() => {
+          this.fontsEpoch++;
+          this.overlaysDirty = true;
+        });
+    }
+  }
+
+  private tickProgram(): void {
+    const view = this.program;
+    if (!view || !this.assets) return;
+    const keep = this.transition ? [this.transition.from] : [];
+    void this.assets.tick(view, keep).catch(() => undefined);
+  }
+
   setBrowserConfig(config: BrowserSourceConfig): void {
     this.browserConfig = { ...config };
     if (!config.visible) this.clearBrowserFrame();
@@ -62,16 +219,7 @@ export class StudioSceneCompositor implements SceneCompositor, OutputCompositor 
   /** Returns whether the frame was taken (false: hidden source or no DOM), so the caller can acknowledge it either way. */
   pushBrowserFrame(frame: BrowserSourceFrame): boolean {
     if (this.disposed || !this.browserConfig.visible || typeof document === "undefined") return false;
-    const { width, height } = frame;
-    const canvas = (this.browserCanvas ??= document.createElement("canvas"));
-    if (canvas.width !== width || canvas.height !== height) {
-      canvas.width = width;
-      canvas.height = height;
-      this.browserPixels = null;
-    }
-    const rgba = bgraPremulToRgba(frame.bgra, width, height, this.browserPixels ?? undefined);
-    this.browserPixels = rgba;
-    canvas.getContext("2d")?.putImageData(new ImageData(rgba, width, height), 0, 0);
+    (this.browser ??= new FrameCanvas()).put(frame);
     this.hasBrowserFrame = true;
     return true;
   }
@@ -114,8 +262,16 @@ export class StudioSceneCompositor implements SceneCompositor, OutputCompositor 
     this.disposed = true;
     this.setRunning(false);
     this.clearBrowserFrame();
-    this.browserCanvas = null;
-    this.browserPixels = null;
+    this.browser?.release();
+    this.browser = null;
+    // The programme state stays (the next capture composes it again); its pictures are fetched again when needed.
+    if (this.programTimer !== null) clearInterval(this.programTimer);
+    this.programTimer = null;
+    this.assets?.dispose();
+    this.assets = null;
+    this.overlays = null;
+    this.overlaysDirty = true;
+    this.fallbacks.clear();
     if (this.baseVideo) {
       this.baseVideo.srcObject = null;
       this.baseVideo = null;
@@ -150,6 +306,7 @@ export class StudioSceneCompositor implements SceneCompositor, OutputCompositor 
     this.ctx = ctx;
     this.baseVideo = video;
     this.outputStream = new MediaStream(captured.getVideoTracks());
+    this.programChanged();
   }
 
   private attachPrimary(primary: MediaStream): void {
@@ -188,32 +345,136 @@ export class StudioSceneCompositor implements SceneCompositor, OutputCompositor 
     if (size) {
       canvas.width = size.width;
       canvas.height = size.height;
+      this.overlaysDirty = true;
     }
 
     const cw = canvas.width;
     const ch = canvas.height;
-    ctx.fillStyle = "#000000";
-    ctx.fillRect(0, 0, cw, ch);
+    const view = this.program;
+    const local = view !== null && localCompositing(view, this.rehearsal) && this.assets !== null;
 
-    const browser = this.browserConfig.visible && this.hasBrowserFrame ? this.browserCanvas : null;
-    const fullBrowser = browser !== null && this.browserConfig.mode === "fullscreen";
-    if (!fullBrowser && v && v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0) {
-      ctx.drawImage(v, 0, 0, cw, ch);
-    }
-
-    if (browser) {
-      const aspect = browser.width / Math.max(1, browser.height);
-      const rect = computeBrowserSourceRect(cw, ch, this.browserConfig, aspect);
-      if (this.browserConfig.mode === "overlay") {
-        ctx.save();
-        ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
-        ctx.shadowBlur = 14;
-        ctx.drawImage(browser, rect.x, rect.y, rect.width, rect.height);
-        ctx.restore();
+    // Scene layers: the incoming (current) scene, and the outgoing one while a transition runs.
+    let sceneOut: SceneKind | null = null;
+    let outFrame: LayerFrame | null = null;
+    let inFrame: LayerFrame = this.steady;
+    const tr = this.transition;
+    if (local && tr) {
+      const now = performance.now();
+      if (tr.startedAt === null && (this.assets!.settled(view.scene) || now - tr.waitSince > TRANSITION_WAIT_MS)) tr.startedAt = now;
+      sceneOut = tr.fromKind;
+      if (tr.startedAt === null) {
+        // Waiting for the incoming picture: the previous scene stays as it was.
+        outFrame = this.steady;
+        inFrame = this.tf.in;
+        inFrame.visible = false;
       } else {
-        ctx.drawImage(browser, rect.x, rect.y, rect.width, rect.height);
+        const f = transitionFrame(tr.fromKind, view.sceneKind, (now - tr.startedAt) / 1000, tr.mode, ch / 720, this.tf);
+        outFrame = f.out;
+        inFrame = f.in;
+        if (f.done) {
+          this.transition = null;
+          sceneOut = null;
+          outFrame = null;
+          this.updateActive();
+        }
       }
     }
+
+    const browser = this.browserConfig.visible && this.hasBrowserFrame ? this.browser!.canvas : null;
+    const incoming = local && view.sceneKind !== "camera" ? this.sceneImage(view.scene, view.sceneKind, cw, ch) : null;
+    if (local && this.overlaysDirty && this.overlays) {
+      this.overlaysDirty = false;
+      const logo = this.assets!.logo();
+      this.overlays.update(view.overlays, cw, ch, logo, logo ? "logo" + String(logo.width) : "", view.darkGreen, this.fontsEpoch);
+    }
+    const layers = layerOrder({
+      local,
+      browser: browser === null ? "none" : this.browserConfig.mode === "fullscreen" ? "fullscreen" : "overlay",
+      sceneIn: local ? view.sceneKind : "camera",
+      sceneOut,
+      sceneInOpaque: incoming !== null && inFrame.visible && inFrame.alpha >= 1 && inFrame.dy === 0,
+      overlays: Boolean(this.overlays && !this.overlays.isEmpty),
+    });
+
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, cw, ch);
+    for (const layer of layers) {
+      switch (layer) {
+        case "camera":
+          if (v && v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0) ctx.drawImage(v, 0, 0, cw, ch);
+          break;
+        case "scene-out":
+          if (tr && outFrame?.visible) this.drawLayer(ctx, this.sceneImage(tr.from, tr.fromKind, cw, ch, tr.fromLabel), outFrame, cw, ch);
+          break;
+        case "scene-in":
+          if (inFrame.visible) this.drawLayer(ctx, incoming, inFrame, cw, ch);
+          break;
+        case "browser":
+          this.drawBrowser(ctx, browser!, cw, ch);
+          break;
+        case "overlays":
+          ctx.drawImage(this.overlays!.canvas, 0, 0, cw, ch);
+          break;
+      }
+    }
+  }
+
+  private drawLayer(ctx: CanvasRenderingContext2D, img: CanvasImageSource | null, f: LayerFrame, cw: number, ch: number): void {
+    if (!img || f.alpha <= 0) return;
+    ctx.globalAlpha = Math.min(1, f.alpha);
+    ctx.drawImage(img, f.dx, f.dy, cw, ch);
+    ctx.globalAlpha = 1;
+  }
+
+  private drawBrowser(ctx: CanvasRenderingContext2D, browser: HTMLCanvasElement, cw: number, ch: number): void {
+    const aspect = browser.width / Math.max(1, browser.height);
+    const rect = computeBrowserSourceRect(cw, ch, this.browserConfig, aspect);
+    if (this.browserConfig.mode === "overlay") {
+      ctx.save();
+      ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
+      ctx.shadowBlur = 14;
+      ctx.drawImage(browser, rect.x, rect.y, rect.width, rect.height);
+      ctx.restore();
+    } else {
+      ctx.drawImage(browser, rect.x, rect.y, rect.width, rect.height);
+    }
+  }
+
+  /**
+   * The picture of a scene: its template frame or the engine's picture (last valid one kept), else for a full screen
+   * a plain card in the mosque green with the scene's name — never black, never the camera it is meant to hide.
+   */
+  private sceneImage(id: string, kind: SceneKind, cw: number, ch: number, label?: string): CanvasImageSource | null {
+    const img = this.assets?.sceneSource(id) ?? null;
+    if (img || kind !== "full") return img;
+    const name = label ?? this.program?.scenes.find((s) => s.id === id)?.label ?? "";
+    return this.fallbackCard(name, cw, ch);
+  }
+
+  private fallbackCard(label: string, cw: number, ch: number): HTMLCanvasElement {
+    const key = `${label}|${cw}x${ch}|${this.program?.darkGreen ?? ""}`;
+    const held = this.fallbacks.get(key);
+    if (held) return held;
+    if (this.fallbacks.size >= 4) this.fallbacks.clear();
+    const c = document.createElement("canvas");
+    c.width = cw;
+    c.height = ch;
+    const g = c.getContext("2d")!;
+    const pal = palette(this.program?.darkGreen);
+    const grad = g.createLinearGradient(0, 0, 0, ch);
+    grad.addColorStop(0, `rgb(${pal.deepTop.join(",")})`);
+    grad.addColorStop(1, `rgb(${pal.deep.join(",")})`);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, cw, ch);
+    if (label) {
+      g.font = cssFont({ family: "serif", weight: 600, size: Math.round((62 * ch) / 720) });
+      g.fillStyle = "rgb(244, 240, 230)";
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillText(label, cw / 2, ch / 2, cw * 0.8);
+    }
+    this.fallbacks.set(key, c);
+    return c;
   }
 }
 
@@ -239,6 +500,7 @@ export class CompositedSource implements MediaSourceStrategy {
   private readonly audioMix: OutputAudioMix | null;
   private readonly changeListeners = new Set<(s: MediaStream) => void>();
   private readonly canvasAvailable: boolean;
+  private demand: CompositorDemand = { browserVisible: false, screenActive: false };
 
   constructor(
     private readonly inner: MediaSourceStrategy,
@@ -249,6 +511,8 @@ export class CompositedSource implements MediaSourceStrategy {
     this.audioMix = opts.audioMix ?? null;
     // A source's sound becomes audible or silent: the audio sender swaps between the microphone and the mix.
     this.audioMix?.onActiveChange(() => !this.acquiring && this.announce());
+    // Scenes and overlays switch the output too: a logo shown, a full screen taken, a fade back to the camera ended.
+    this.compositor.onProgramActiveChange?.(() => this.apply());
   }
 
   /** The source's own stream (camera, IP camera or screen with the microphone), before the canvas and the mix. */
@@ -262,7 +526,17 @@ export class CompositedSource implements MediaSourceStrategy {
 
   /** The browser/screen demand changed: switch between the raw stream and the canvas without releasing the source. */
   setDemand(d: CompositorDemand): void {
-    const next = this.canvasAvailable ? chooseOutput(d) : "raw";
+    this.demand = { ...d };
+    this.apply();
+  }
+
+  /**
+   * Raw stream or canvas, from the web source / screen demand and the programme. A switch only swaps the track the
+   * senders carry (`onStreamChange` → `replaceTrack`): the WHIP connection is never renegotiated nor cut.
+   */
+  private apply(): void {
+    const program = this.compositor.programActive?.() ?? false;
+    const next = this.canvasAvailable ? chooseOutput({ ...this.demand, program }) : "raw";
     if (next === this.mode) return;
     this.mode = next;
     if (next === "canvas") this.engageCanvas();

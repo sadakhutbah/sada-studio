@@ -1,9 +1,10 @@
-import { BrowserWindow, session, type Session } from "electron";
+import { type BrowserWindow, session, type Session } from "electron";
 import { lookup } from "node:dns/promises";
 import { isAllowedBrowserRequest, isPrivateOrLocalHost, isReportableLoadFailure, isReportableLoadRejection, validateBrowserSourceUrl } from "../core/sources/browser-source";
-import { FrameGate, DEFAULT_FRAME_FPS, MAX_FRAME_FPS, fitWithin } from "../core/sources/frame-gate";
+import { FrameGate, DEFAULT_FRAME_FPS, MAX_FRAME_FPS } from "../core/sources/frame-gate";
 import { t } from "../core/messages";
 import type { BrowserSourceFrame, BrowserSourceStatus } from "../core/sources/types";
+import { createOffscreenWindow, denyAllPermissions, nativeImageToFrame } from "./offscreen";
 
 const DEFAULT_WIDTH = 1280;
 const DEFAULT_HEIGHT = 720;
@@ -26,10 +27,7 @@ const IDLE: BrowserSourceStatus = { active: false, loading: false, visible: fals
  * `resolve` lets tests replace DNS.
  */
 export function lockDownBrowserSession(ses: Session, resolve: (host: string) => Promise<string[]> = defaultResolve): void {
-  ses.setPermissionRequestHandler((_wc, _permission, cb) => cb(false));
-  ses.setPermissionCheckHandler(() => false);
-  ses.setDevicePermissionHandler(() => false);
-  ses.setDisplayMediaRequestHandler((_request, cb) => cb({}));
+  denyAllPermissions(ses);
   const verdicts = new Map<string, { ok: boolean; at: number }>();
   ses.webRequest.onBeforeRequest(async (details, cb) => {
     if (!isAllowedBrowserRequest(details.url)) return cb({ cancel: true });
@@ -184,28 +182,8 @@ export class BrowserSourceService {
       this.locked = true;
     }
 
-    const win = new BrowserWindow({
-      show: false,
-      width,
-      height,
-      transparent: true,
-      frame: false,
-      webPreferences: {
-        partition: BROWSER_SOURCE_PARTITION,
-        offscreen: true,
-        sandbox: true,
-        contextIsolation: true,
-        nodeIntegration: false,
-        webviewTag: false,
-        backgroundThrottling: false,
-        // No preload: the external page gets no bridge to the application.
-      },
-    });
-
+    const win = createOffscreenWindow({ partition: BROWSER_SOURCE_PARTITION, width, height, fps, javascript: true });
     const wc = win.webContents;
-    wc.setAudioMuted(true);
-    wc.setFrameRate(fps);
-    wc.setWindowOpenHandler(() => ({ action: "deny" }));
     // Every navigation, redirects and frames included, must stay on public http(s) hosts.
     const guard = (event: { preventDefault(): void }, targetUrl: string) => {
       try {
@@ -261,14 +239,9 @@ export class BrowserSourceService {
 
   /** Raw pixels, scaled down first when above the bounds: no PNG/JPEG encoding on the main process. */
   private emitImage(image: Electron.NativeImage): void {
-    const size = image.getSize();
-    if (size.width <= 0 || size.height <= 0) {
-      this.gate.ack();
-      return;
-    }
-    const fit = fitWithin(size.width, size.height);
-    const out = fit.width === size.width && fit.height === size.height ? image : image.resize({ width: fit.width, height: fit.height, quality: "good" });
-    this.emitFrame({ width: fit.width, height: fit.height, bgra: new Uint8Array(out.toBitmap()) });
+    const frame = nativeImageToFrame(image);
+    if (!frame) return this.gate.ack();
+    this.emitFrame(frame);
   }
 
   private emitFrame(frame: BrowserSourceFrame): void {

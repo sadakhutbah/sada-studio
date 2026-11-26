@@ -2,7 +2,7 @@ import type { OverlayKind, TransitionMode } from "@core/api/types";
 import { ApiError } from "@core/errors";
 import type { WhepSignaling } from "@core/transport/whep";
 import type { WhipSignaling } from "@core/transport/whip";
-import type { IpcResult } from "@shared/ipc";
+import type { IpcResult, ScreenRenderRequest } from "@shared/ipc";
 
 export function unwrap<T>(r: IpcResult<T>): T {
   if (!r.ok) throw new ApiError(r.status, r.message, r.code);
@@ -37,6 +37,9 @@ export const bridge = {
       select: async (sourceId: string | null) => void unwrap(await window.studio.sources.screen.select(sourceId)),
       audioSupport: async () => unwrap(await window.studio.sources.screen.audioSupport()),
     },
+    scene: {
+      render: async (req: ScreenRenderRequest) => unwrap(await window.studio.sources.scene.render(req)),
+    },
   },
   setup: {
     enter: async () => unwrap(await window.studio.setup.enter()),
@@ -51,6 +54,8 @@ export const bridge = {
     setMute: async (muted: boolean) => unwrap(await window.studio.regie.setMute(muted)),
     setOverlay: async (kind: OverlayKind, payload: Record<string, unknown>) =>
       unwrap(await window.studio.regie.setOverlay(kind, payload)),
-    overlayLayer: async (etag: string | null) => unwrap(await window.studio.regie.overlayLayer(etag)),
+    logo: async (etag: string | null) => unwrap(await window.studio.regie.logo(etag)),
+    sceneImage: async (id: string, setup: boolean, etag: string | null) => unwrap(await window.studio.regie.sceneImage(id, setup, etag)),
+    screen: async (id: string, setup: boolean, etag: string | null) => unwrap(await window.studio.regie.screen(id, setup, etag)),
   },
 };

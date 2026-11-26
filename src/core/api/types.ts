@@ -109,10 +109,29 @@ export interface LiveOverlays {
 }
 
 /**
- * The overlay layer drawn by the server (logo, banner, QR, exactly as the engine composites them over the camera):
- * a transparent 1280×720 PNG identified by its ETag. `changed: false`: the copy the client holds is still current.
+ * A programme picture (mosque logo, scene image) revalidated by ETag. `changed: false`: the copy the client holds is
+ * still current (304). `png: null`: the server has none (404: no logo configured, unknown scene).
  */
-export type OverlayLayerFetch = { changed: false } | { changed: true; etag: string; png: Uint8Array };
+export type AssetFetch = { changed: false } | { changed: true; etag: string; png: Uint8Array | null };
+
+/**
+ * A screen of the mosque's imported template (`GET /api/v1/studio/live/screen/{ecran}`, CONTRACT.md):
+ * `source: "gabarit"` → `html` is the page of that screen (fonts inlined, scripts removed, placeholders NOT filled),
+ * `values` the variables to put in it, `countdown` the variable the studio updates every second;
+ * `source: "engine"` → no template for it, `html` is null and the studio uses the engine's picture (`png`).
+ * `transparent`: a banner over the camera (transparent background) rather than an opaque full screen.
+ */
+export interface ScreenDescriptor {
+  source: "gabarit" | "engine";
+  html: string | null;
+  values: Record<string, string>;
+  countdown: { variable: string; target: string } | null;
+  transparent: boolean;
+  png: string;
+}
+
+/** `screen: null`: the server has no such screen (404). */
+export type ScreenFetch = { changed: false } | { changed: true; etag: string; screen: ScreenDescriptor | null };
 
 export interface LiveStatus {
   reachable?: boolean;

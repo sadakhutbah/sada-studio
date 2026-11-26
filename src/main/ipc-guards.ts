@@ -38,6 +38,30 @@ export function parseRegieCommand(cmd: unknown, arg: unknown, transition: unknow
 
 export const isTransition = (m: unknown): m is TransitionMode => m === "fade" || m === "cut";
 
+/** A scene or screen id as the server names them (`priere`, `dars_fin`, a custom scene's id). */
+export function isSceneId(v: unknown): v is string {
+  return typeof v === "string" && /^[\w-]{1,64}$/.test(v);
+}
+
+/** An ETag the client holds (opaque, bounded), or null. */
+export function etagOf(v: unknown): string | null {
+  return typeof v === "string" && v.length > 0 && v.length <= 200 && !/[\r\n]/.test(v) ? v : null;
+}
+
+/** Largest screen page accepted for local rendering (fonts are inlined: a template is up to ~1 MB). */
+export const MAX_SCREEN_HTML = 4 * 1024 * 1024;
+
+/** A screen render request from the UI: bounded page, key and countdown; anything else is refused. */
+export function parseScreenRender(v: unknown): { key: string; html: string; transparent: boolean; countdown: string | null } | null {
+  if (!v || typeof v !== "object") return null;
+  const r = v as Record<string, unknown>;
+  if (typeof r.key !== "string" || r.key.length === 0 || r.key.length > 300) return null;
+  if (typeof r.html !== "string" || r.html.length === 0 || r.html.length > MAX_SCREEN_HTML) return null;
+  if (typeof r.transparent !== "boolean") return null;
+  if (r.countdown !== null && (typeof r.countdown !== "string" || r.countdown.length > 40)) return null;
+  return { key: r.key, html: r.html, transparent: r.transparent, countdown: r.countdown as string | null };
+}
+
 const CORNERS: readonly OverlayCorner[] = ["tl", "tr", "bl", "br"];
 const str = (v: unknown, max: number): v is string => typeof v === "string" && v.length <= max;
 
@@ -85,6 +109,7 @@ export const SOURCE_INVOKE_CHANNELS = [
   "sources:screen-open-settings",
   "sources:screen-audio-support",
   "sources:browser-audio-arm",
+  "sources:scene-render",
 ] as const;
 /** One-way UI -> main. */
 export const SOURCE_SEND_CHANNELS = ["sources:browser-frame-ack"] as const;

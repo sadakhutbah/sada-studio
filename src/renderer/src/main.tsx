@@ -2,6 +2,8 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "@fontsource-variable/source-sans-3";
 import "@fontsource/eb-garamond/400.css";
+// SemiBold: the titles of the overlay banner, as the engine draws them (EB Garamond SemiBold).
+import "@fontsource/eb-garamond/600.css";
 import "./styles.css";
 import { App } from "./App";
 import { setUiLocale } from "./strings";

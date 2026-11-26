@@ -83,6 +83,9 @@ const bridge: StudioBridge = {
       openSettings: () => ipcRenderer.invoke("sources:screen-open-settings"),
       audioSupport: () => ipcRenderer.invoke("sources:screen-audio-support"),
     },
+    scene: {
+      render: (req) => ipcRenderer.invoke("sources:scene-render", req),
+    },
   },
   media: {
     access: () => ipcRenderer.invoke("media:access"),
@@ -137,7 +140,9 @@ const bridge: StudioBridge = {
     setTransition: (mode) => ipcRenderer.invoke("regie:set-transition", mode),
     setMute: (muted) => ipcRenderer.invoke("regie:set-mute", muted),
     setOverlay: (kind, payload) => ipcRenderer.invoke("regie:set-overlay", kind, payload),
-    overlayLayer: (etag) => ipcRenderer.invoke("regie:overlay-layer", etag),
+    logo: (etag) => ipcRenderer.invoke("regie:logo", etag),
+    sceneImage: (id, setup, etag) => ipcRenderer.invoke("regie:scene-image", id, setup, etag),
+    screen: (id, setup, etag) => ipcRenderer.invoke("regie:screen", id, setup, etag),
   },
 };
 
