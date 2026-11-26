@@ -1,4 +1,5 @@
 import type { CurrentLive, HeartbeatReply, LiveOrder, MosqueInfo, Slot, StreamKind } from "../api/types";
+import { DEFAULT_PROFILE, parseProfile, type StreamProfile } from "../stream/profile";
 import { currentKey, nextSlot, runningSlot, slotKey } from "./schedule";
 
 /**
@@ -31,8 +32,17 @@ export interface Notice {
   message: string;
 }
 
+/** `next` when it differs from `current` (keeps the object identity otherwise, so nothing re-renders), null when absent. */
+function sameProfile(current: StreamProfile, next: StreamProfile | null): StreamProfile | null {
+  if (!next) return null;
+  const same = (Object.keys(next) as (keyof StreamProfile)[]).every((k) => next[k] === current[k]);
+  return same ? current : next;
+}
+
 export interface KioskState {
   phase: KioskPhase;
+  /** Broadcast quality of the mosque (resolution, frame rate, bit rate), as the server announced it. */
+  stream: StreamProfile;
   /** Last typed instance address, to prefill the pairing screen. */
   baseUrl: string;
   pairing: { userCode: string; expiresAt: number } | null;
@@ -82,6 +92,7 @@ export const DEFAULT_KIOSK_OPTIONS: KioskOptions = { armMarginMs: 10 * 60_000, m
 
 export const INITIAL_KIOSK: KioskState = {
   phase: "unpaired",
+  stream: DEFAULT_PROFILE,
   baseUrl: "",
   pairing: null,
   mosque: null,
@@ -158,7 +169,19 @@ export function kioskTransition(s: KioskState, e: KioskEvent, o: KioskOptions = 
       const conflict =
         s.conflict && reply.command === "idle" && !reply.current && at - s.conflict.at > o.conflictTtlMs ? null : s.conflict;
       return derive(
-        { ...s, online: true, lastSeenAt: at, command: reply.command, current: reply.current, schedule: reply.schedule, manual, suppressed, conflict },
+        {
+          ...s,
+          online: true,
+          lastSeenAt: at,
+          command: reply.command,
+          current: reply.current,
+          schedule: reply.schedule,
+          manual,
+          suppressed,
+          conflict,
+          // An answer without a (valid) profile keeps the last one: a live never changes size by accident.
+          stream: sameProfile(s.stream, parseProfile(reply.config?.stream)) ?? s.stream,
+        },
         at,
         o,
       );
