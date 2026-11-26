@@ -126,7 +126,15 @@ export interface LiveStatus {
   mic_muted?: boolean;
   audio_level_db?: number | null;
   message?: string;
+  /** Monotonic counter bumped by the orchestrator on every state change; absent on older servers. */
+  rev?: number;
+  /** Who composes the programme: this studio ("studio") or the orchestrator ("server"). */
+  compositing?: Compositing;
 }
+
+export type Compositing = "studio" | "server";
+/** How a scene is drawn: camera alone, camera under the scene's banner, or full screen (camera hidden). */
+export type SceneKind = "camera" | "banner" | "full";
 
 /** Where the orchestrator stands for the setup view: asleep and being woken, answering, or not coming. */
 export type SetupOrchestrator = "waking" | "ready" | "unreachable";
@@ -158,6 +166,7 @@ export interface RegieScene {
   category?: string;
   slug?: string;
   preview_url?: string;
+  scene_kind?: SceneKind;
 }
 
 export interface RegieAudioState {
@@ -178,9 +187,20 @@ export interface RegieData {
   overlays?: LiveOverlays;
 }
 
-export interface OverlayUpdateResponse {
+export interface OverlayUpdateResponse extends LiveStatus {
   ok: boolean;
   overlays: LiveOverlays;
+}
+
+/** Answer of the transition and mute commands (newer servers add the full state and its `rev`). */
+export interface TransitionResponse extends LiveStatus {
+  ok: boolean;
+  transition: TransitionMode;
+}
+export interface MuteResponse extends LiveStatus {
+  ok: boolean;
+  muted: boolean;
+  mic_muted: boolean;
 }
 
 export interface StudioConfigResponse {

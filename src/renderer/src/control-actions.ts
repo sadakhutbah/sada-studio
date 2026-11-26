@@ -1,4 +1,5 @@
 import type { ControlRequest, ControlResult } from "@core/control/actions";
+import { pickScene } from "@core/control/scenes";
 import { t } from "@core/messages";
 
 /** What the window can do for an action asked from outside (global shortcut, local API). */
@@ -6,10 +7,20 @@ export interface ControlContext {
   mic: {
     muted(): boolean;
     /**
-     * Mutes or restores the microphone (and tells the server). `error`: the change did not happen; `warning`: it did,
-     * but the server could not be told yet.
+     * Mutes or restores the microphone at once (and tells the server in the background). `error`: the change did not
+     * happen; `warning`: it did, but the server could not be told yet.
      */
     set(muted: boolean): Promise<{ error: string | null; warning?: string | null }>;
+  };
+  /**
+   * The Régie scenes, through the same store as the panel (optimistic, rev-filtered). Absent or not `ready()` (Régie
+   * not loaded): the action answers `ui_unavailable` and the main process changes the scene by itself.
+   */
+  scene?: {
+    ready(): boolean;
+    ids(): string[];
+    current(): string | undefined;
+    take(sceneId: string): Promise<string | null>;
   };
   browser: {
     state(): "none" | "shown" | "hidden";
@@ -59,8 +70,26 @@ export async function runControlAction(request: ControlRequest, ctx: ControlCont
       const error = await ctx.screen.set(target);
       return error ? { ok: false, code: "failed", message: error, state: { screen: ctx.screen.on() ? "on" : "off" } } : { ok: true, state: { screen: target ? "on" : "off" } };
     }
+    case "scene.next":
+    case "scene.previous":
+    case "scene.set": {
+      const sc = ctx.scene;
+      if (!sc?.ready()) return failed("ui_unavailable", t("control.uiUnavailable"));
+      const ids = sc.ids();
+      let target: string | null;
+      if (request.action === "scene.set") {
+        target = request.scene && ids.includes(request.scene) ? request.scene : null;
+        if (!target) return failed("unknown_scene", t("control.unknownScene", { scene: request.scene ?? "" }));
+      } else {
+        const direction = request.action === "scene.next" ? "next" : "previous";
+        target = pickScene(ids, sc.current() || undefined, direction);
+        if (!target) return failed("no_scene", t(direction === "next" ? "control.noNextScene" : "control.noPreviousScene"));
+      }
+      const error = await sc.take(target);
+      const scene = sc.current();
+      return error ? { ok: false, code: "failed", message: error, state: scene ? { scene } : {} } : { ok: true, state: { scene: scene || target } };
+    }
     default:
-      // Scenes are changed in the main process: they never reach the window.
       return failed("unsupported", request.action);
   }
 }

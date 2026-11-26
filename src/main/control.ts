@@ -16,7 +16,8 @@ import { log } from "./log";
 
 /**
  * Global shortcuts and the local control API (Stream Deck, Bitfocus Companion). Both end in the same `ControlService`:
- * the microphone, web source and screen share are run by the application window, the scenes by the Sada server.
+ * the microphone, web source, screen share and scenes are run by the application window (one store with the Régie
+ * panel); scenes fall back to the main process talking to the Sada server when the window cannot take them.
  * Only the application window may use the settings channels.
  */
 export function registerControl(getMain: () => BrowserWindow | null, getKiosk: () => Kiosk | null, userData: string): { dispose(): void } {
@@ -58,7 +59,13 @@ export function registerControl(getMain: () => BrowserWindow | null, getKiosk: (
     return { ok: true, state: { scene: after.scene ?? target } };
   };
 
-  const service = new ControlService({ window: (r) => link.request(r), scene: scenes });
+  // Scenes go through the window first: its store shows the change at once, like a click in the Régie panel. Without a
+  // loaded Régie there, the main process takes the scene by itself.
+  const sceneViaWindow = async (request: ControlRequest): Promise<ControlResult> => {
+    const r = await link.request(request);
+    return r.code === "ui_unavailable" ? scenes(request) : r;
+  };
+  const service = new ControlService({ window: (r) => link.request(r), scene: sceneViaWindow });
   const run = (request: ControlRequest) => service.execute(request).then((r) => (r.ok ? r : (log(`Control ${request.action}: ${r.message ?? r.code ?? "failed"}`), r)));
 
   const shortcuts = new ShortcutRegistry(

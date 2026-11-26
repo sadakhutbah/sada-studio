@@ -55,7 +55,7 @@ export function parseControlRequest(action: unknown, scene?: unknown): ControlRe
   return { action };
 }
 
-/** `scene.*` runs in the main process (it talks to the Sada server); every other action acts on the window. */
+/** `scene.*` goes to the window's Régie store first, and to the main process (Sada server) when the window cannot take it. */
 export const isSceneAction = (a: ControlAction): boolean => a.startsWith("scene.");
 
 const STATE_BROWSER = ["none", "shown", "hidden"];

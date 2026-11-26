@@ -1,41 +1,30 @@
-import { useEffect, useRef, useState } from "react";
-import type {
-  LiveOverlays,
-  LiveStatus,
-  OverlayCorner,
-  OverlayKind,
-  RegieData,
-  RegieScene,
-  TransitionMode,
-} from "@core/api/types";
+import { useEffect, useState } from "react";
+import type { OverlayCorner, OverlayKind } from "@core/api/types";
 import { meterPosition } from "@core/audio/meter";
-import { Poller, WriteFence, backoffDelayMs } from "@core/regie/poller";
-import { bridge } from "../bridge";
+import { Poller, backoffDelayMs } from "@core/regie/poller";
+import {
+  overlayKey,
+  regieActions,
+  selectDrafts,
+  selectError,
+  selectPending,
+  selectPendingScene,
+  selectProgramView,
+  selectScenes,
+  selectStale,
+  selectView,
+} from "@core/regie/state";
+import { applyOverlay, changeTransition, loadRegie, pollStatus, setAuto, takeScene, toggleOverlay } from "@core/regie/thunks";
 import type { RegieLiveView } from "../regie-preview";
 import { resolveRegieShortcut } from "../regie-shortcuts";
+import { useRegieDispatch, useRegieSelector } from "../store";
 import { Btn, Card } from "../ui";
 import { EyeBtn, inputCls, smallBtn } from "./regie-controls";
 import { LocalSources, type LocalSourcesProps } from "./LocalSources";
 import { str as t } from "../strings";
 
-const DEFAULT_OVERLAYS: LiveOverlays = {
-  qr: { visible: false, url: "", label: "", corner: "tr" },
-  banner: { visible: false, title: "", subtitle: "" },
-  logo: { visible: false },
-};
-
-const FALLBACK_SCENES: RegieScene[] = [
-  { id: "khutba", kind: "camera", label: t.regie.scene.live },
-  { id: "avant", kind: "slate", label: t.regie.scene.before },
-  { id: "priere", kind: "slate", label: t.regie.scene.prayer },
-  { id: "entracte", kind: "slate", label: t.regie.scene.intermission },
-  { id: "termine", kind: "slate", label: t.regie.scene.ended },
-];
-
 const POLL_MS = 3000;
 const POLL_MAX_MS = 30_000;
-/** Consecutive failed polls before the data shown is flagged as out of date. */
-const STALE_AFTER_FAILURES = 2;
 
 const CORNERS: OverlayCorner[] = ["tl", "tr", "bl", "br"];
 
@@ -45,12 +34,16 @@ export interface RegieAudioProps {
   level: { rms: number; peak: number };
   muted: boolean;
   onToggleMute: () => void;
-  /** The last mute change the server refused or never received (the local state was rolled back). */
+  /** Non-blocking warning: the change holds here but the server could not be told ("not synchronised"). */
   error?: string | null;
 }
 
+/**
+ * The panel reads and writes the Régie store (`<Provider>` above it): no global busy state, only the control whose
+ * command is on its way shows `aria-busy`.
+ */
 export interface RegiePanelProps {
-  /** Scene and overlays currently requested: drawn over the monitor by the parent. */
+  /** Scene and overlays shown (optimistic `selectProgramView`): drawn over the monitor by the parent. */
   onLiveChange?: (view: RegieLiveView) => void;
   audio?: RegieAudioProps;
   /** Local sources (web source, screen share), driven by the studio screen. */
@@ -90,7 +83,7 @@ export function AudioStrip({ level, muted, onToggleMute, error }: RegieAudioProp
         </Btn>
       </div>
       {error && (
-        <p role="alert" className="m-0 text-[0.82rem] text-live">
+        <p role="status" className="m-0 text-[0.82rem] text-warn">
           {error}
         </p>
       )}
@@ -99,61 +92,30 @@ export function AudioStrip({ level, muted, onToggleMute, error }: RegieAudioProp
 }
 
 export function RegiePanel({ audio, onLiveChange, localSources }: RegiePanelProps) {
-  const [data, setData] = useState<RegieData | null>(null);
-  const [status, setStatus] = useState<LiveStatus | null>(null);
+  const dispatch = useRegieDispatch();
+  const view = useRegieSelector(selectView);
+  const program = useRegieSelector(selectProgramView);
+  const scenesList = useRegieSelector(selectScenes);
+  const drafts = useRegieSelector(selectDrafts);
+  const err = useRegieSelector(selectError);
+  const stale = useRegieSelector(selectStale);
+  const pendingScene = useRegieSelector(selectPendingScene);
+  const transitionBusy = useRegieSelector((s) => selectPending(s, "transition"));
+  const qrBusy = useRegieSelector((s) => selectPending(s, overlayKey("qr")));
+  const bannerBusy = useRegieSelector((s) => selectPending(s, overlayKey("banner")));
+  const logoBusy = useRegieSelector((s) => selectPending(s, overlayKey("logo")));
   const [staged, setStaged] = useState<string>("khutba");
-  const [transition, setTransition] = useState<TransitionMode>("fade");
-  const [overlays, setOverlays] = useState<LiveOverlays>(DEFAULT_OVERLAYS);
-  const [qrUrl, setQrUrl] = useState("");
-  const [qrLabel, setQrLabel] = useState("");
-  const [qrCorner, setQrCorner] = useState<OverlayCorner>("tr");
-  const [bannerTitle, setBannerTitle] = useState("");
-  const [bannerSubtitle, setBannerSubtitle] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [pollFailures, setPollFailures] = useState(0);
-  const fence = useRef(new WriteFence());
-  const [err, setErr] = useState<string | null>(null);
-
-  function hydrateOverlays(ov?: LiveOverlays, updateFields = false) {
-    if (!ov) return;
-    setOverlays(ov);
-    if (updateFields) {
-      setQrUrl(ov.qr.url || "");
-      setQrLabel(ov.qr.label || "");
-      setQrCorner(ov.qr.corner || "tr");
-      setBannerTitle(ov.banner.title || "");
-      setBannerSubtitle(ov.banner.subtitle || "");
-    }
-  }
 
   useEffect(() => {
     let active = true;
-    bridge.regie
-      .get()
-      .then((d) => {
-        if (!active) return;
-        setData(d);
-        setStatus(d.status);
-        if (d.transition === "fade" || d.transition === "cut") setTransition(d.transition);
-        hydrateOverlays(d.overlays ?? d.status?.overlays, true);
-      })
-      .catch((e) => {
-        if (active) setErr(e instanceof Error ? e.message : String(e));
-      });
-
+    // A new session of the panel (live or setup): answers meant for the previous one are dropped by the store.
+    dispatch(regieActions.reset());
+    void dispatch(loadRegie());
     const poller = new Poller({
-      run: async () => {
-        const stillCurrent = fence.current.begin();
-        const s = await bridge.regie.status();
-        // A command issued while this poll was in flight wins: its own answer already refreshed the state.
-        if (!active || !stillCurrent()) return;
-        setStatus(s);
-        if (s.transition === "fade" || s.transition === "cut") setTransition(s.transition);
-        if (s.overlays) setOverlays(s.overlays);
-      },
+      run: () => dispatch(pollStatus()),
       delayMs: backoffDelayMs(POLL_MS, POLL_MAX_MS),
       isHidden: () => document.hidden,
-      onFailures: (n) => active && setPollFailures(n),
+      onFailures: (n) => active && dispatch(regieActions.pollFailuresChanged(n)),
     });
     // The first poll is the `get()` above; the loop starts after one interval.
     const first = window.setTimeout(() => poller.start(), POLL_MS);
@@ -161,80 +123,25 @@ export function RegiePanel({ audio, onLiveChange, localSources }: RegiePanelProp
       if (!document.hidden) poller.wake();
     };
     document.addEventListener("visibilitychange", onVisibility);
-
     return () => {
       active = false;
       window.clearTimeout(first);
       poller.stop();
       document.removeEventListener("visibilitychange", onVisibility);
+      // Not loaded any more: shortcuts and the local API take scenes through the main process until the next mount.
+      dispatch(regieActions.reset());
     };
-  }, []);
+  }, [dispatch]);
 
-  async function sendCmd(cmd: string, arg?: string, tr?: TransitionMode) {
-    fence.current.bump();
-    setBusy(true);
-    setErr(null);
-    try {
-      await bridge.regie.command(cmd, arg, tr);
-      const s = await bridge.regie.status();
-      setStatus(s);
-      setPollFailures(0);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function takeScene(sceneId: string) {
-    if (sceneId === "janaza") {
-      await sendCmd("janaza", undefined, transition);
-    } else {
-      await sendCmd("scene", sceneId, transition);
-    }
-  }
-  // Latest takeScene for the keyboard shortcut, without re-binding the listener every render.
-  const takeSceneRef = useRef(takeScene);
-  useEffect(() => {
-    takeSceneRef.current = takeScene;
-  });
-
-  async function changeTransition(mode: TransitionMode) {
-    fence.current.bump();
-    setTransition(mode);
-    setErr(null);
-    try {
-      const r = await bridge.regie.setTransition(mode);
-      setTransition(r.transition);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    }
-  }
-
-  async function updateOverlay(kind: OverlayKind, payload: Record<string, unknown>) {
-    fence.current.bump();
-    setBusy(true);
-    setErr(null);
-    try {
-      const r = await bridge.regie.setOverlay(kind, payload);
-      hydrateOverlays(r.overlays, true);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const st = status || data?.status || {};
-  const reachable = Boolean(st.reachable);
-  const scene = st.scene || "";
-  const isAuto = !st.override;
-  const displayErr = err;
-  const scenesList = data?.scenes && data.scenes.length > 0 ? data.scenes : FALLBACK_SCENES;
+  const reachable = view.reachable;
+  const scene = view.scene;
+  const isAuto = !view.override;
+  const transition = view.transition;
+  const overlays = view.overlays;
 
   useEffect(() => {
-    onLiveChange?.({ scene, scenes: scenesList, overlays });
-  }, [onLiveChange, scene, scenesList, overlays]);
+    onLiveChange?.(program);
+  }, [onLiveChange, program]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -252,26 +159,30 @@ export function RegiePanel({ audio, onLiveChange, localSources }: RegiePanelProp
       if (action.type === "stage") {
         const sc = scenesList[action.index];
         if (sc) setStaged(sc.id);
-      } else if (action.type === "take" && reachable && !busy) {
+      } else if (action.type === "take" && reachable) {
         e.preventDefault();
-        void takeSceneRef.current(staged);
+        void dispatch(takeScene(staged));
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [scenesList, staged, reachable, busy, transition]);
+  }, [dispatch, scenesList, staged, reachable]);
+
+  const qrDraft = (patch: Partial<typeof drafts.qr>) => dispatch(regieActions.draftChanged({ qr: patch }));
+  const bannerDraft = (patch: Partial<typeof drafts.banner>) => dispatch(regieActions.draftChanged({ banner: patch }));
+  const overlayCmd = (kind: OverlayKind, mode: "toggle" | "apply") => void dispatch(mode === "toggle" ? toggleOverlay(kind) : applyOverlay(kind));
 
   return (
     <Card title={t.regie.title}>
       <div className="flex flex-col gap-3">
-        {pollFailures >= STALE_AFTER_FAILURES && (
+        {stale && (
           <div role="status" className="rounded-[7px] border border-warn/40 bg-warn-bg px-2.5 py-1.5 text-[0.84rem] text-warn">
             {t.regie.stale}
           </div>
         )}
-        {displayErr && (
-          <div className="rounded-[7px] border border-live/40 bg-err-bg px-2.5 py-1.5 text-[0.84rem] text-[#7a1f20]">
-            {displayErr}
+        {err && (
+          <div role="alert" className="rounded-[7px] border border-live/40 bg-err-bg px-2.5 py-1.5 text-[0.84rem] text-[#7a1f20]">
+            {err}
           </div>
         )}
 
@@ -279,20 +190,20 @@ export function RegiePanel({ audio, onLiveChange, localSources }: RegiePanelProp
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between text-[0.76rem] font-semibold uppercase tracking-[0.1em] text-green">
             <span>{t.regie.scenes}</span>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5" aria-busy={transitionBusy || undefined}>
               <Btn
                 variante={transition === "fade" ? "plein" : "ghost"}
                 className={smallBtn}
-                disabled={busy}
-                onClick={() => void changeTransition("fade")}
+                aria-pressed={transition === "fade"}
+                onClick={() => void dispatch(changeTransition("fade"))}
               >
                 {t.regie.transitions.fade}
               </Btn>
               <Btn
                 variante={transition === "cut" ? "plein" : "ghost"}
                 className={smallBtn}
-                disabled={busy}
-                onClick={() => void changeTransition("cut")}
+                aria-pressed={transition === "cut"}
+                onClick={() => void dispatch(changeTransition("cut"))}
               >
                 {t.regie.transitions.cut}
               </Btn>
@@ -305,11 +216,13 @@ export function RegiePanel({ audio, onLiveChange, localSources }: RegiePanelProp
                 key={s.id}
                 variante={scene === s.id ? "plein" : "ghost"}
                 className={`${smallBtn} ${staged === s.id && scene !== s.id ? "ring-1 ring-leaf" : ""}`}
-                disabled={busy || !reachable}
+                disabled={!reachable}
+                aria-pressed={scene === s.id}
+                aria-busy={pendingScene?.scene === s.id || undefined}
                 data-regie-scene={s.id}
                 onClick={() => {
                   setStaged(s.id);
-                  void takeScene(s.id);
+                  void dispatch(takeScene(s.id));
                 }}
               >
                 {s.label}
@@ -318,8 +231,10 @@ export function RegiePanel({ audio, onLiveChange, localSources }: RegiePanelProp
             <Btn
               variante={isAuto && reachable ? "plein" : "ghost"}
               className={smallBtn}
-              disabled={busy || !reachable}
-              onClick={() => void sendCmd("auto")}
+              disabled={!reachable}
+              aria-pressed={isAuto && reachable}
+              aria-busy={pendingScene?.auto || undefined}
+              onClick={() => void dispatch(setAuto())}
             >
               {t.regie.auto}
             </Btn>
@@ -335,47 +250,39 @@ export function RegiePanel({ audio, onLiveChange, localSources }: RegiePanelProp
         {/* Sources locales (source web, partage d'écran) */}
         {localSources && <LocalSources {...localSources} />}
 
-        {/* Incrustations serveur */}
+        {/* Incrustations */}
         <div className="flex flex-col gap-2.5 border-t border-line pt-3">
           <div className="text-[0.76rem] font-semibold uppercase tracking-[0.1em] text-green">
             {t.regie.overlays}
           </div>
 
           {/* QR code */}
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5" aria-busy={qrBusy || undefined}>
             <EyeBtn
               visible={overlays.qr.visible}
               label={`${overlays.qr.visible ? t.regie.hide : t.regie.show} — ${t.regie.qr}`}
-              disabled={busy}
-              onClick={() =>
-                void updateOverlay("qr", {
-                  visible: !overlays.qr.visible,
-                  url: qrUrl,
-                  label: qrLabel,
-                  corner: qrCorner,
-                })
-              }
+              onClick={() => overlayCmd("qr", "toggle")}
             />
             <span className="min-w-[115px] text-[0.9rem] font-semibold text-ink">{t.regie.qr}</span>
             <input
               type="url"
-              value={qrUrl}
-              onChange={(e) => setQrUrl(e.target.value)}
+              value={drafts.qr.url}
+              onChange={(e) => qrDraft({ url: e.target.value })}
               placeholder={t.regie.qrUrl}
               maxLength={512}
               className={`${inputCls} min-w-[170px] flex-1`}
             />
             <input
               type="text"
-              value={qrLabel}
-              onChange={(e) => setQrLabel(e.target.value)}
+              value={drafts.qr.label}
+              onChange={(e) => qrDraft({ label: e.target.value })}
               placeholder={t.regie.qrLabel}
               maxLength={60}
               className={`${inputCls} min-w-[120px] flex-1`}
             />
             <select
-              value={qrCorner}
-              onChange={(e) => setQrCorner(e.target.value as OverlayCorner)}
+              value={drafts.qr.corner}
+              onChange={(e) => qrDraft({ corner: e.target.value as OverlayCorner })}
               aria-label={t.regie.qr}
               className={inputCls}
             >
@@ -385,77 +292,46 @@ export function RegiePanel({ audio, onLiveChange, localSources }: RegiePanelProp
                 </option>
               ))}
             </select>
-            <Btn
-              variante="ghost"
-              className={smallBtn}
-              disabled={busy}
-              onClick={() =>
-                void updateOverlay("qr", {
-                  visible: overlays.qr.visible,
-                  url: qrUrl,
-                  label: qrLabel,
-                  corner: qrCorner,
-                })
-              }
-            >
+            <Btn variante="ghost" className={smallBtn} onClick={() => overlayCmd("qr", "apply")}>
               {t.regie.apply}
             </Btn>
           </div>
 
           {/* Bandeau / Annonce */}
-          <div className="flex flex-wrap items-center gap-1.5 border-t border-line pt-2.5">
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-line pt-2.5" aria-busy={bannerBusy || undefined}>
             <EyeBtn
               visible={overlays.banner.visible}
               label={`${overlays.banner.visible ? t.regie.hide : t.regie.show} — ${t.regie.banner}`}
-              disabled={busy}
-              onClick={() =>
-                void updateOverlay("banner", {
-                  visible: !overlays.banner.visible,
-                  title: bannerTitle,
-                  subtitle: bannerSubtitle,
-                })
-              }
+              onClick={() => overlayCmd("banner", "toggle")}
             />
             <span className="min-w-[115px] text-[0.9rem] font-semibold text-ink">{t.regie.banner}</span>
             <input
               type="text"
-              value={bannerTitle}
-              onChange={(e) => setBannerTitle(e.target.value)}
+              value={drafts.banner.title}
+              onChange={(e) => bannerDraft({ title: e.target.value })}
               placeholder={t.regie.bannerTitle}
               maxLength={120}
               className={`${inputCls} min-w-[170px] flex-1`}
             />
             <input
               type="text"
-              value={bannerSubtitle}
-              onChange={(e) => setBannerSubtitle(e.target.value)}
+              value={drafts.banner.subtitle}
+              onChange={(e) => bannerDraft({ subtitle: e.target.value })}
               placeholder={t.regie.bannerSubtitle}
               maxLength={160}
               className={`${inputCls} min-w-[140px] flex-1`}
             />
-            <Btn
-              variante="ghost"
-              className={smallBtn}
-              disabled={busy}
-              onClick={() =>
-                void updateOverlay("banner", {
-                  visible: overlays.banner.visible,
-                  title: bannerTitle,
-                  subtitle: bannerSubtitle,
-                })
-              }
-            >
+            <Btn variante="ghost" className={smallBtn} onClick={() => overlayCmd("banner", "apply")}>
               {t.regie.apply}
             </Btn>
           </div>
 
           {/* Logo de la mosquée */}
-          <div className="flex items-center gap-1.5 border-t border-line pt-2.5">
+          <div className="flex items-center gap-1.5 border-t border-line pt-2.5" aria-busy={logoBusy || undefined}>
             <EyeBtn
               visible={overlays.logo.visible}
               label={`${overlays.logo.visible ? t.regie.hide : t.regie.show} — ${t.regie.logo}`}
-              disabled={busy}
-              onClick={() => void updateOverlay("logo", { visible: !overlays.logo.visible })}
+              onClick={() => overlayCmd("logo", "toggle")}
             />
             <span className="text-[0.9rem] font-semibold text-ink">{t.regie.logo}</span>
           </div>
