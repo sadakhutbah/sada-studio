@@ -42,8 +42,6 @@ dmg:
   title: Sada Studio ${version}
 win:
   icon: build/icon.ico
-  signtoolOptions:
-    publisherName: Sada
   legalTrademarks: Sada
   target:
     - { target: nsis, arch: [x64] }
