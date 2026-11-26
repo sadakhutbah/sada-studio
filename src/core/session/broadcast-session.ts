@@ -52,7 +52,10 @@ export class BroadcastSession {
   /** Incremented on each start/stop: a late response from a past generation is ignored. */
   private generation = 0;
 
+  private connectOptions: ConnectOptions | undefined;
+
   constructor(private readonly deps: SessionDeps) {
+    this.connectOptions = deps.connect;
     this.now = deps.now ?? Date.now;
     this.backoff = deps.backoffMs ?? defaultBackoff;
     this.machine = new SessionMachine({ maxAttempts: deps.maxAttempts ?? 40 });
@@ -126,7 +129,12 @@ export class BroadcastSession {
     const t = this.deps.transportFactory();
     this.transport = t;
     t.onLost((reason) => this.onLost(t, reason));
-    await t.connect(stream, this.deps.connect);
+    await t.connect(stream, this.connectOptions);
+  }
+
+  /** Quality announced by the server: applied at the next connection (a live in progress keeps its own). */
+  setConnectOptions(options: ConnectOptions): void {
+    this.connectOptions = { ...this.deps.connect, ...options };
   }
 
   private onLost(t: Transport, reason: string) {

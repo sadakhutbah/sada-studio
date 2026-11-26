@@ -47,7 +47,7 @@ export class WhipTransport implements Transport {
         const tr = pc.addTransceiver(track, { direction: "sendonly", streams: [stream] });
         if (track.kind === "video") preferH264(tr);
       }
-      await this.limitVideoBitrate(pc, options.maxVideoKbps);
+      await this.limitVideo(pc, options);
 
       pc.onicecandidate = (ev) => {
         if (!ev.candidate) return;
@@ -182,17 +182,26 @@ export class WhipTransport implements Transport {
     });
   }
 
-  private async limitVideoBitrate(pc: RTCPeerConnection, kbps?: number) {
-    if (!kbps) return;
+  private async limitVideo(pc: RTCPeerConnection, { maxVideoKbps: kbps, maxHeight, maxFps }: ConnectOptions) {
+    if (!kbps && !maxHeight && !maxFps) return;
     for (const sender of pc.getSenders()) {
       if (sender.track?.kind !== "video") continue;
       const params = sender.getParameters();
       params.encodings = params.encodings?.length ? params.encodings : [{}];
-      params.encodings[0].maxBitrate = kbps * 1000;
+      if (kbps) params.encodings[0].maxBitrate = kbps * 1000;
+      if (maxFps) params.encodings[0].maxFramerate = maxFps;
+      const scale = scaleDownFor(sender.track.getSettings?.().height, maxHeight);
+      if (scale) params.encodings[0].scaleResolutionDownBy = scale;
       (params as RTCRtpSendParameters & { degradationPreference?: string }).degradationPreference = "maintain-framerate";
       await sender.setParameters(params).catch(() => undefined);
     }
   }
+}
+
+/** `scaleResolutionDownBy` bringing a picture of `height` down to `maxHeight`; undefined when it already fits (never scales up). */
+export function scaleDownFor(height: number | undefined, maxHeight: number | undefined): number | undefined {
+  if (!height || !maxHeight || height <= maxHeight * 1.02) return undefined;
+  return Math.round((height / maxHeight) * 1000) / 1000;
 }
 
 /**

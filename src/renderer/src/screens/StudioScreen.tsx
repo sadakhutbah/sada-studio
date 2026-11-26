@@ -37,6 +37,12 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   const { session: live, source, composited, compositor, audioMix, snapshot } = useBroadcast();
   const { state, stats } = snapshot;
   const active = isActive(state);
+  // Quality chosen for the mosque in the back office: capture size and rate, uplink ceiling (next connection).
+  const profile = kiosk.stream;
+  useEffect(() => {
+    compositor.setProfile(profile);
+    live.setConnectOptions({ maxVideoKbps: profile.uplinkKbps, maxHeight: profile.height, maxFps: profile.fps });
+  }, [compositor, live, profile]);
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [captureError, setCaptureError] = useState("");
@@ -173,8 +179,9 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
       audioDeviceId: prefs.audioDeviceId || undefined,
       audio: prefs.audio,
       audioDelayMs: ipMode ? undefined : webcamDelay,
+      video: { width: profile.width, height: profile.height, frameRate: profile.fps },
     }),
-    [local.screenActive, local.screenSourceId, local.screenSystemAudio, ipMode, rtspUrl, audioDevice, prefs.videoDeviceId, prefs.audioDeviceId, prefs.audio, webcamDelay],
+    [profile, local.screenActive, local.screenSourceId, local.screenSystemAudio, ipMode, rtspUrl, audioDevice, prefs.videoDeviceId, prefs.audioDeviceId, prefs.audio, webcamDelay],
   );
   const setCaptureSettings = (patch: Partial<CaptureSettings>) => {
     if (capture) void window.studio.capture.setSettings({ ...capture.settings, ...patch });
