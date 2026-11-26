@@ -1,4 +1,10 @@
-/** Libellés de l'interface. Le vocabulaire reprend celui de la console Sada (web/src/i18n.ts). */
+import { getLocale, setLocale, type Locale } from "@core/messages";
+import { en } from "./strings.en";
+
+/** Same shape as `T` with every string widened: the type an English catalogue must match. */
+type Widen<T> = T extends string ? string : { [K in keyof T]: Widen<T[K]> };
+
+/** Libellés de l'interface (français). Le vocabulaire reprend celui de la console Sada (web/src/i18n.ts). */
 export const fr = {
   app: { name: "Sadā", studio: "Studio" },
   pair: {
@@ -74,6 +80,14 @@ export const fr = {
     auto: "Ouvrir automatiquement au direct si un écran externe est branché",
   },
   settings: { button: "Réglages", title: "Réglages", close: "Fermer" },
+  language: {
+    kicker: "Langue",
+    label: "Langue de l'interface",
+    auto: "Automatique (langue du système)",
+    fr: "Français",
+    en: "English",
+    help: "S'applique tout de suite, sans redémarrage.",
+  },
   sources: {
     kicker: "Sources",
     camera: "Caméra",
@@ -248,6 +262,38 @@ export const fr = {
     unmute: "Réactiver le son",
   },
 } as const;
+
+/** Every label of the UI, in any language. `en` is typed from it, so a missing key fails the typecheck. */
+export type Strings = Widen<typeof fr>;
+
+export { en };
+export const catalogs: Record<Locale, Strings> = { fr, en };
+
+const listeners = new Set<() => void>();
+
+/** Switches the language of the UI and tells the subscribers (the React tree re-renders). */
+export function setUiLocale(locale: Locale): void {
+  if (locale === getLocale()) return;
+  setLocale(locale);
+  if (typeof document !== "undefined") document.documentElement.lang = locale;
+  for (const l of listeners) l();
+}
+
+export const subscribeLocale = (cb: () => void): (() => void) => {
+  listeners.add(cb);
+  return () => void listeners.delete(cb);
+};
+
+/**
+ * The labels of the current language. Read it at use time (`str.settings.title`), never keep a part of it in a
+ * module-level constant: it would stay in the language of the first read.
+ */
+export const str: Strings = new Proxy({} as Strings, {
+  get: (_t, key: string) => catalogs[getLocale()][key as keyof Strings],
+  has: (_t, key: string) => key in catalogs[getLocale()],
+  ownKeys: () => Reflect.ownKeys(catalogs[getLocale()]),
+  getOwnPropertyDescriptor: (_t, key: string) => ({ enumerable: true, configurable: true, value: catalogs[getLocale()][key as keyof Strings] }),
+});
 
 export const fill = (s: string, vars: Record<string, string | number>) =>
   s.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));

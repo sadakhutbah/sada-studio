@@ -10,7 +10,7 @@ import type {
 } from "@core/sources/types";
 import { removalStep, type RemovalEvent, type RemovalPhase } from "@core/sources/removal";
 import { Btn } from "../ui";
-import { fr as t } from "../strings";
+import { str as t } from "../strings";
 import { EyeBtn, inputCls, smallBtn } from "./regie-controls";
 
 const CORNERS: BrowserSourceCorner[] = ["tl", "tr", "bl", "br"];

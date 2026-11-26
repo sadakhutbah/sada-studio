@@ -16,7 +16,7 @@ import { resolveRegieShortcut } from "../regie-shortcuts";
 import { Btn, Card } from "../ui";
 import { EyeBtn, inputCls, smallBtn } from "./regie-controls";
 import { LocalSources, type LocalSourcesProps } from "./LocalSources";
-import { fr as t } from "../strings";
+import { str as t } from "../strings";
 
 const DEFAULT_OVERLAYS: LiveOverlays = {
   qr: { visible: false, url: "", label: "", corner: "tr" },

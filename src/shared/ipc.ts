@@ -13,6 +13,7 @@ import type { WindowsFacts } from "../core/health/health";
 import type { ClientReport, KioskView } from "../core/kiosk/supervisor";
 import type { UpdateStatus } from "../core/kiosk/update-gate";
 import type { ControlRequest, ControlResult, ShortcutAction } from "../core/control/actions";
+import type { LocaleChoice, LocaleView } from "../core/locale";
 import type { ControlView } from "../core/control/settings";
 import type { ScreenAudioSupport } from "../core/sources/screen-audio";
 import type { BrowserSourceFrame, BrowserSourceStatus, DesktopSourceInfo, ScreenAccess } from "../core/sources/types";
@@ -116,7 +117,15 @@ export interface ControlBridge {
 }
 
 /** What the main process exposes to the UI (`window.studio`). */
+/** Interface language: the choice is saved by the main process, which applies it and tells every window. */
+export interface LocaleBridge {
+  get(): Promise<LocaleView>;
+  set(choice: LocaleChoice): Promise<IpcResult<LocaleView>>;
+  onChange(cb: (v: LocaleView) => void): () => void;
+}
+
 export interface StudioBridge {
+  locale: LocaleBridge;
   control: ControlBridge;
   capture: CaptureBridge;
   sources: SourcesBridge;

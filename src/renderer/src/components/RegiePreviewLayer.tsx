@@ -1,7 +1,7 @@
 import { t as msg } from "@core/messages";
 import type { OverlayLayer } from "../hooks";
 import { buildPreview, type RegieLiveView } from "../regie-preview";
-import { fr as t } from "../strings";
+import { str as t } from "../strings";
 
 const CORNER_CLS: Record<string, string> = {
   tl: "left-3 top-3",

@@ -2,9 +2,19 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { CaptureView } from "../core/capture/settings";
 import type { BrowserSourceFrame, BrowserSourceStatus } from "../core/sources/types";
 import type { ControlRequest, ControlResult } from "../core/control/actions";
+import type { LocaleView } from "../core/locale";
 import type { CaptureMedia, KioskSnapshot, StudioBridge } from "../shared/ipc";
 
 const bridge: StudioBridge = {
+  locale: {
+    get: () => ipcRenderer.invoke("locale:get"),
+    set: (choice) => ipcRenderer.invoke("locale:set", choice),
+    onChange: (cb) => {
+      const listener = (_e: unknown, v: LocaleView) => cb(v);
+      ipcRenderer.on("locale:changed", listener);
+      return () => void ipcRenderer.removeListener("locale:changed", listener);
+    },
+  },
   control: {
     get: () => ipcRenderer.invoke("control:get"),
     setShortcut: (action, accelerator) => ipcRenderer.invoke("control:set-shortcut", action, accelerator),

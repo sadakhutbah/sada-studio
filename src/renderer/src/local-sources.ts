@@ -13,7 +13,7 @@ import { bridge } from "./bridge";
 import type { ControlContext } from "./control-actions";
 import type { LocalSourcesProps } from "./components/LocalSources";
 import type { Prefs } from "./prefs";
-import { fr } from "./strings";
+import { str } from "./strings";
 
 const IDLE: BrowserSourceStatus = { active: false, loading: false, visible: false, url: "", error: null };
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -173,7 +173,7 @@ export function useLocalSources({ compositor, source, mix, browser: browserPrefs
     setScreenError(message);
   }, []);
 
-  useEffect(() => source.onRecoverableEnded(() => failScreen(fr.regie.screenEnded)), [source, failScreen]);
+  useEffect(() => source.onRecoverableEnded(() => failScreen(str.regie.screenEnded)), [source, failScreen]);
 
   const remember = useCallback(
     (s: DesktopSourceInfo) => {

@@ -4,7 +4,7 @@ import type { ShortcutAction } from "@core/control/actions";
 import { MAX_API_PORT, MIN_API_PORT, type ControlView } from "@core/control/settings";
 import { ApiError } from "@core/errors";
 import { unwrap } from "../bridge";
-import { fill, fr as t } from "../strings";
+import { fill, str as t } from "../strings";
 import { Btn, Card, Kicker } from "../ui";
 import { inputCls, smallBtn } from "./regie-controls";
 

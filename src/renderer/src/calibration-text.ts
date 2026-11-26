@@ -1,6 +1,6 @@
 import type { CalibrationView } from "../../core/capture/settings";
 import { t } from "../../core/messages";
-import { fill, fr } from "./strings";
+import { fill, str } from "./strings";
 
 /** Message of a finished calibration run, in the UI language. */
 export function describeCalibration(c: CalibrationView): { ok: boolean; text: string } | null {
@@ -9,7 +9,7 @@ export function describeCalibration(c: CalibrationView): { ok: boolean; text: st
   if (r.ok) {
     return r.audioBehind
       ? { ok: false, text: t("capture.calib.audioBehind") }
-      : { ok: true, text: fill(fr.ipCamera.calibrated, { delay: r.delayMs }) };
+      : { ok: true, text: fill(str.ipCamera.calibrated, { delay: r.delayMs }) };
   }
   if (r.reason === "no-audio") return { ok: false, text: t("capture.calib.noAudio") };
   if (r.reason === "no-video") return { ok: false, text: t("capture.calib.noVideo") };

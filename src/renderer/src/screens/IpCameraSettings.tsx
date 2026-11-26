@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { isRtspUrl, type CaptureSettings, type CaptureView } from "@core/capture/settings";
-import { fill, fr } from "../strings";
+import { fill, str } from "../strings";
 import { Btn, Card, Field, inputClass, selectClass } from "../ui";
 import { CalibrationWizard, DelayStepper } from "./SyncControls";
 
@@ -16,7 +16,7 @@ type Props = {
 
 const stateLabel = (v: CaptureView) => {
   const s = v.state;
-  return s.status === "reconnecting" ? fill(fr.ipCamera.state.reconnecting, { n: s.attempt }) : fr.ipCamera.state[s.status];
+  return s.status === "reconnecting" ? fill(str.ipCamera.state.reconnecting, { n: s.attempt }) : str.ipCamera.state[s.status];
 };
 
 /** Settings of the "IP camera + local microphone" source: address, sound card, Calibrate; the rest is under "Advanced". */
@@ -43,7 +43,7 @@ export function IpCameraSettings({ view, devices, locked, onSettings, onRefreshD
   return (
     <Card>
       <div className="grid gap-3.5">
-        <Field label={fr.ipCamera.rtsp} help={urlInvalid ? undefined : fr.ipCamera.rtspHelp}>
+        <Field label={str.ipCamera.rtsp} help={urlInvalid ? undefined : str.ipCamera.rtspHelp}>
           <input
             value={url}
             disabled={locked}
@@ -56,11 +56,11 @@ export function IpCameraSettings({ view, devices, locked, onSettings, onRefreshD
             aria-invalid={urlInvalid}
             className={inputClass}
           />
-          {urlInvalid && <span className="mt-1 block text-[0.82rem] text-live">{fr.ipCamera.rtspInvalid}</span>}
+          {urlInvalid && <span className="mt-1 block text-[0.82rem] text-live">{str.ipCamera.rtspInvalid}</span>}
         </Field>
-        <Field label={fr.ipCamera.audio}>
+        <Field label={str.ipCamera.audio}>
           <select value={view.settings.audioDevice} disabled={locked} onChange={(e) => onSettings({ audioDevice: e.target.value })} className={selectClass}>
-            <option value="">{choices.length ? fr.ipCamera.audioChoose : fr.ipCamera.audioNone}</option>
+            <option value="">{choices.length ? str.ipCamera.audioChoose : str.ipCamera.audioNone}</option>
             {choices.map((d) => (
               <option key={d} value={d}>
                 {d}
@@ -68,28 +68,28 @@ export function IpCameraSettings({ view, devices, locked, onSettings, onRefreshD
             ))}
           </select>
         </Field>
-        {view.ffmpeg === "missing" && <p className="m-0 text-[0.85rem] text-live">{fr.ipCamera.ffmpegMissing}</p>}
+        {view.ffmpeg === "missing" && <p className="m-0 text-[0.85rem] text-live">{str.ipCamera.ffmpegMissing}</p>}
         <div>
           <Btn disabled={locked || calibrating || view.ffmpeg === "missing" || !view.settings.rtspUrl || !view.settings.audioDevice} onClick={start}>
-            {fr.ipCamera.calibrate}
+            {str.ipCamera.calibrate}
           </Btn>
         </div>
 
         <details className="rounded-lg border border-line px-3 py-2">
-          <summary className="cursor-pointer select-none font-semibold text-deep">{fr.ipCamera.advanced}</summary>
+          <summary className="cursor-pointer select-none font-semibold text-deep">{str.ipCamera.advanced}</summary>
           <div className="mt-3 grid gap-3.5">
             <DelayStepper delayMs={view.delayMs} disabled={locked || calibrating} onDelay={onDelay} />
             <div>
               <Btn variante="ghost" disabled={locked} onClick={onRefreshDevices}>
-                ↻ {fr.ipCamera.audioRefresh}
+                ↻ {str.ipCamera.audioRefresh}
               </Btn>
             </div>
             <p className="m-0 text-[0.9rem]">
-              <span className="font-semibold text-deeper">{fr.ipCamera.stateKicker} : </span>
+              <span className="font-semibold text-deeper">{str.ipCamera.stateKicker} : </span>
               {stateLabel(view)}
               {view.state.lastError && view.state.status !== "running" && <span className="text-muted"> — {view.state.lastError}</span>}
             </p>
-            {view.alert && <p className="m-0 rounded-lg bg-err-bg px-3 py-2 text-[0.9rem] text-[#7a1f20]">{fr.ipCamera.alert}</p>}
+            {view.alert && <p className="m-0 rounded-lg bg-err-bg px-3 py-2 text-[0.9rem] text-[#7a1f20]">{str.ipCamera.alert}</p>}
           </div>
         </details>
       </div>

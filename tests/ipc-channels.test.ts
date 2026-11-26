@@ -4,7 +4,7 @@ import { CONTROL_EVENT_CHANNELS, CONTROL_INVOKE_CHANNELS, CONTROL_SEND_CHANNELS,
 
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 const preload = read("src/preload/index.ts");
-const mainFiles = ["src/main/ipc.ts", "src/main/sources.ts", "src/main/projector.ts", "src/main/control.ts"].map(read).join("\n");
+const mainFiles = ["src/main/ipc.ts", "src/main/sources.ts", "src/main/projector.ts", "src/main/control.ts", "src/main/locale.ts"].map(read).join("\n");
 
 const all = (re: RegExp, text: string) => [...text.matchAll(re)].map((m) => m[1]!);
 

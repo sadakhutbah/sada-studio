@@ -65,7 +65,7 @@ export class BrowserSeriesRecorder implements SeriesRecorder {
     canvas.width = 64;
     canvas.height = 36;
     const g = canvas.getContext("2d", { willReadFrequently: true });
-    if (!g) throw new Error("canvas indisponible");
+    if (!g) throw new Error("canvas unavailable");
     let prev: Uint8ClampedArray | null = null;
     const block = new Float32Array(this.analyser.fftSize);
     const sampleVideo = (t: number) => {

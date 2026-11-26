@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectorDisplay } from "@shared/ipc";
-import { fill, fr } from "../strings";
+import { fill, str } from "../strings";
 import { Btn, Card, Kicker } from "../ui";
 import type { Prefs } from "../prefs";
 
@@ -70,15 +70,15 @@ export function ProjectorPanel({ stream, onAir, prefs, setPrefs }: Props) {
   }, [onAir, prefs.projectorAuto, displays, openProjector]);
 
   const label = (d: ProjectorDisplay) =>
-    `${fill(fr.projector.screenName, { n: d.index, w: d.width, h: d.height })} — ${d.external ? fr.projector.external : fr.projector.primary}`;
+    `${fill(str.projector.screenName, { n: d.index, w: d.width, h: d.height })} — ${d.external ? str.projector.external : str.projector.primary}`;
 
   return (
     <Card className="grid gap-3">
-      <Kicker>{fr.projector.title}</Kicker>
-      <p className="m-0 text-[0.85rem] text-muted">{fr.projector.help}</p>
+      <Kicker>{str.projector.title}</Kicker>
+      <p className="m-0 text-[0.85rem] text-muted">{str.projector.help}</p>
       <div className="flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2 text-[0.9rem]">
-          {fr.projector.screen}
+          {str.projector.screen}
           <select
             className="rounded-md border border-line bg-white px-2 py-1.5"
             value={chosen?.id ?? ""}
@@ -94,17 +94,17 @@ export function ProjectorPanel({ stream, onAir, prefs, setPrefs }: Props) {
         </label>
         {open ? (
           <Btn variante="light" onClick={() => void window.studio.projector.close()}>
-            {fr.projector.close}
+            {str.projector.close}
           </Btn>
         ) : (
           <Btn variante="light" onClick={openProjector}>
-            {fr.projector.open}
+            {str.projector.open}
           </Btn>
         )}
       </div>
       <label className="flex items-center gap-2 text-[0.9rem]">
         <input type="checkbox" checked={prefs.projectorAuto} onChange={(e) => setPrefs({ ...prefs, projectorAuto: e.target.checked })} />
-        {fr.projector.auto}
+        {str.projector.auto}
       </label>
     </Card>
   );
