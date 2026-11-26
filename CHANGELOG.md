@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/thesadaproject/sada-studio/compare/v0.3.0...v0.3.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **mac:** release the per-architecture builds ([#26](https://github.com/thesadaproject/sada-studio/issues/26)) ([0ef3008](https://github.com/thesadaproject/sada-studio/commit/0ef3008838259c3120ef3cc5f91cafe233c5aae7))
+
 ## [0.3.0](https://github.com/thesadaproject/sada-studio/compare/v0.2.5...v0.3.0) (2026-11-26)
 
 
