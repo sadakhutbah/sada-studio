@@ -47,6 +47,13 @@ Resolved by `resolveFfmpeg`: `SADA_FFMPEG`, else `resources/ffmpeg/ffmpeg(.exe)`
 `npm run dist:win` runs `scripts/fetch-ffmpeg-win.mjs` (BtbN static GPL build, SHA-256 checked against the published list,
 `build/ffmpeg/` is git-ignored, the CI Windows job does the same). ffmpeg runs as a separate process (GPL, not linked).
 
+On macOS the app ships a **minimal** ffmpeg (about 5 MB per architecture instead of 67-95 MB): `scripts/build-ffmpeg-min.sh` builds ffmpeg + x264
+from pinned, checksummed sources with only the components used here (RTSP/TCP, avfoundation, libx264, aac, fragmented MP4, the calibration
+filters). The "ffmpeg (macOS minimal build)" workflow builds both architectures, runs `scripts/test-ffmpeg-min.sh` (the real capture and
+calibration command lines against an RTSP stream) and publishes them; `scripts/fetch-ffmpeg-mac.mjs` downloads them by pinned SHA-256.
+**Any new ffmpeg option or filter used in `src/core/capture` needs its component added to `COMPONENTS` in the build script** (and a new
+published build + pin), otherwise the shipped binary fails at runtime with "Unknown encoder/filter/format". Windows still uses the BtbN build.
+
 ## Code
 
 `src/core/capture/` (pure logic: strategy registry, `buildCaptureArgs`, state machine, controller with reconnection and alert,
