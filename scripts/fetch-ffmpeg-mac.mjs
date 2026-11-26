@@ -1,11 +1,13 @@
-// Downloads the static macOS ffmpeg builds (arm64 and x64) that the app ships, checks them against the published
-// SHA-256 and stores them as build/ffmpeg/mac-arm64/ffmpeg and build/ffmpeg/mac-x64/ffmpeg: the app is built once per
+// Downloads the minimal macOS ffmpeg builds (arm64 and x64) that the app ships, checks them against the SHA-256 pinned
+// below and stores them as build/ffmpeg/mac-arm64/ffmpeg and build/ffmpeg/mac-x64/ffmpeg: the app is built once per
 // architecture and each build embeds only its own binary (electron-builder.yml: build/ffmpeg/mac-${arch}). Run by
 // `npm run dist:mac` and by CI on macOS; nothing is committed (build/ffmpeg is git-ignored). electron-builder signs it
 // with the rest of the bundle (hardened runtime).
 //   node scripts/fetch-ffmpeg-mac.mjs [--force]
-// Source: https://ffmpeg.martin-riedl.de (static GPL build with avfoundation and RTSP). The application only runs it as
-// a separate process, it is not linked.
+// Source: the "ffmpeg (macOS minimal build)" workflow, which runs scripts/build-ffmpeg-min.sh (ffmpeg + x264 from pinned,
+// checksummed sources; GPL) and publishes the zips as a release. To update: run the workflow with publish=true, then
+// replace RELEASE and the two hashes (printed by the workflow, also in <asset>.sha256). The application only runs
+// ffmpeg as a separate process, it is not linked.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -14,11 +16,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const BASE = "https://ffmpeg.martin-riedl.de/download/macos";
-// Pinned release builds (ffmpeg 9.1); bump both together. `arch` is the name lipo reports; `dir` is electron-builder's.
+const RELEASE = "ffmpeg-min-4";
+const BASE = `https://github.com/thesadaproject/sada-studio/releases/download/${RELEASE}`;
 const BUILDS = [
-  { arch: "arm64", dir: "mac-arm64", path: "arm64/1795207104_9.1" },
-  { arch: "x86_64", dir: "mac-x64", path: "amd64/1795212433_9.1" },
+  { arch: "arm64", dir: "mac-arm64", sha256: "66a56acc29569f7f162319e18e59a7c1155a48aeffbdcfd03ac2324dff33dcb3" },
+  { arch: "x64", dir: "mac-x64", sha256: "2e9a10ab81f85585d424474abd5ca69a017adce2bb5994eb40b8f70802730b7f" },
 ];
 
 const force = process.argv.includes("--force");
@@ -28,40 +30,26 @@ if (todo.length === 0) {
   process.exit(0);
 }
 
-const get = async (url) => {
-  const r = await fetch(url, { redirect: "follow" });
-  if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
-  return Buffer.from(await r.arrayBuffer());
-};
-
 const work = mkdtempSync(join(tmpdir(), "sada-ffmpeg-"));
 try {
   for (const b of todo) {
-    const url = `${BASE}/${b.path}/ffmpeg.zip`;
+    const url = `${BASE}/ffmpeg-mac-${b.arch}.zip`;
     console.log(`Downloading ${url}…`);
-    const zip = await get(url);
-    const expected = (await get(`${url}.sha256`)).toString("utf8").trim().split(/\s+/)[0];
+    const r = await fetch(url, { redirect: "follow" });
+    if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
+    const zip = Buffer.from(await r.arrayBuffer());
     const actual = createHash("sha256").update(zip).digest("hex");
-    if (!/^[0-9a-f]{64}$/.test(expected ?? "")) throw new Error(`No checksum published for ${url}`);
-    if (actual !== expected) throw new Error(`SHA-256 mismatch for ${url}: ${actual} (expected ${expected})`);
+    if (actual !== b.sha256) throw new Error(`SHA-256 mismatch for ${url}: ${actual} (expected ${b.sha256})`);
     const dir = join(work, b.arch);
     mkdirSync(dir);
     const zipPath = join(dir, "ffmpeg.zip");
     writeFileSync(zipPath, zip);
     execFileSync("unzip", ["-q", zipPath, "-d", dir], { stdio: "inherit" });
-    const bin = join(dir, "ffmpeg");
-    if (process.platform === "darwin") {
-      const archs = execFileSync("lipo", ["-archs", bin]).toString().trim();
-      if (archs !== b.arch) throw new Error(`${url} is ${archs}, expected ${b.arch}`);
-    }
     const out = join(root, "build", "ffmpeg", b.dir);
     mkdirSync(out, { recursive: true });
-    copyFileSync(bin, join(out, "ffmpeg"));
+    copyFileSync(join(dir, "ffmpeg"), join(out, "ffmpeg"));
+    copyFileSync(join(dir, "BUILD-INFO.txt"), join(out, "SOURCE.txt"));
     chmodSync(join(out, "ffmpeg"), 0o755);
-    writeFileSync(
-      join(out, "SOURCE.txt"),
-      `${url}\nsha256 ${actual}\nFFmpeg is GPL: https://ffmpeg.org/ and https://ffmpeg.martin-riedl.de\n`,
-    );
     console.log(`ffmpeg ${b.arch} ready: ${out}`);
   }
 } finally {
