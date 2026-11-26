@@ -97,7 +97,7 @@ jobs:
       - name: ffmpeg for the Windows installer (IP camera source)
         if: matrix.name == 'windows'
         run: node scripts/fetch-ffmpeg-win.mjs
-      - name: ffmpeg for the macOS app (IP camera source, universal binary)
+      - name: ffmpeg for the macOS app (IP camera source, one binary per architecture)
         if: matrix.name == 'mac'
         run: node scripts/fetch-ffmpeg-mac.mjs
       - name: Build installers
