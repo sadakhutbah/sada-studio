@@ -40,6 +40,20 @@ export class StudioSceneCompositor implements SceneCompositor, OutputCompositor 
   private hasBrowserFrame = false;
   private disposed = false;
 
+  private width = DEFAULT_WIDTH;
+  private height = DEFAULT_HEIGHT;
+  private fps = DEFAULT_FPS;
+
+  /**
+   * Size and frame rate of the picture (the quality chosen for the mosque). Taken when the canvas is created and by the
+   * drawing loop the next time it starts: a canvas already running keeps following the real size of its video.
+   */
+  setProfile(p: { width: number; height: number; fps: number }): void {
+    this.width = p.width;
+    this.height = p.height;
+    this.fps = p.fps;
+  }
+
   setBrowserConfig(config: BrowserSourceConfig): void {
     this.browserConfig = { ...config };
     if (!config.visible) this.clearBrowserFrame();
@@ -93,7 +107,7 @@ export class StudioSceneCompositor implements SceneCompositor, OutputCompositor 
       return;
     }
     if (this.timer !== null || this.disposed || !this.canvas) return;
-    this.timer = setInterval(() => this.drawFrame(), Math.round(1000 / DEFAULT_FPS));
+    this.timer = setInterval(() => this.drawFrame(), Math.round(1000 / this.fps));
   }
 
   dispose(): void {
@@ -121,8 +135,8 @@ export class StudioSceneCompositor implements SceneCompositor, OutputCompositor 
     if (this.canvas && this.ctx && this.outputStream) return;
     this.disposed = false;
     const canvas = document.createElement("canvas");
-    canvas.width = DEFAULT_WIDTH;
-    canvas.height = DEFAULT_HEIGHT;
+    canvas.width = this.width;
+    canvas.height = this.height;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("2D canvas context unavailable");
 
@@ -131,7 +145,7 @@ export class StudioSceneCompositor implements SceneCompositor, OutputCompositor 
     video.playsInline = true;
     video.autoplay = true;
 
-    const captured = canvas.captureStream(DEFAULT_FPS);
+    const captured = canvas.captureStream(this.fps);
     this.canvas = canvas;
     this.ctx = ctx;
     this.baseVideo = video;

@@ -10,6 +10,10 @@ export interface TransportStats {
 export interface ConnectOptions {
   /** Video bitrate ceiling, in kbit/s. */
   maxVideoKbps?: number;
+  /** Height the picture is brought down to when the source is bigger (never scaled up). */
+  maxHeight?: number;
+  /** Frame rate ceiling. */
+  maxFps?: number;
 }
 
 /**
