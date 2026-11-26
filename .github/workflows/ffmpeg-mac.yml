@@ -1,0 +1,102 @@
+name: ffmpeg (macOS minimal build)
+
+# Builds the minimal ffmpeg shipped in the macOS app (scripts/build-ffmpeg-min.sh), tests it against the argument sets of
+# src/core/capture, and publishes it as a release asset that scripts/fetch-ffmpeg-mac.mjs downloads (pinned by SHA-256).
+# Manual only: run it when the ffmpeg/x264 pins or the component list change, then update the pins in the fetch script.
+
+on:
+  pull_request:
+    paths: [scripts/build-ffmpeg-min.sh, scripts/test-ffmpeg-min.sh, .github/workflows/ffmpeg-mac.yml]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the binaries as a release (tag ffmpeg-min-<run number>)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest # Apple Silicon; the x64 binary is cross-compiled
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: brew install nasm pkg-config mediamtx ffmpeg
+      - name: Build
+        run: scripts/build-ffmpeg-min.sh ${{ matrix.arch }} out/${{ matrix.arch }}
+      - name: Architecture
+        run: |
+          lipo -archs out/${{ matrix.arch }}/ffmpeg
+          otool -L out/${{ matrix.arch }}/ffmpeg
+          ls -l out/${{ matrix.arch }}/ffmpeg
+      - name: Test (RTSP, capture and calibration argument sets)
+        run: |
+          printf 'rtspTransports: [tcp]\nrtmp: no\nhls: no\nwebrtc: no\nsrt: no\napi: no\nmetrics: no\nplayback: no\nrtspAddress: 127.0.0.1:8554\npaths:\n  cam:\n' > /tmp/mtx.yml
+          mediamtx /tmp/mtx.yml >/tmp/mediamtx.log 2>&1 &
+          sleep 2
+          ffmpeg -hide_banner -loglevel error -re -f lavfi -i "testsrc2=size=1280x720:rate=25" -t 300 \
+            -c:v libx264 -preset ultrafast -tune zerolatency -pix_fmt yuv420p -g 25 -rtsp_transport tcp -f rtsp rtsp://127.0.0.1:8554/cam 2>/tmp/pub.log &
+          sleep 3
+          cat /tmp/pub.log /tmp/mediamtx.log
+          if [ "${{ matrix.arch }}" = x64 ]; then
+            # Intel binary on the Apple Silicon runner, through Rosetta.
+            softwareupdate --install-rosetta --agree-to-license || true
+            cp out/x64/ffmpeg /tmp/ffmpeg-x64
+            printf '#!/bin/sh\nexec arch -x86_64 /tmp/ffmpeg-x64 "$@"\n' > /tmp/ffmpeg-under-test
+            chmod +x /tmp/ffmpeg-under-test
+            scripts/test-ffmpeg-min.sh /tmp/ffmpeg-under-test rtsp://127.0.0.1:8554/cam
+          else
+            scripts/test-ffmpeg-min.sh out/arm64/ffmpeg rtsp://127.0.0.1:8554/cam
+          fi
+      - name: Logs on failure
+        if: failure()
+        run: |
+          echo "--- mediamtx"; cat /tmp/mediamtx.log || true
+          echo "--- publisher"; cat /tmp/pub.log || true
+      - name: avfoundation is built in
+        run: |
+          bin=out/${{ matrix.arch }}/ffmpeg
+          [ "${{ matrix.arch }}" = x64 ] && bin="arch -x86_64 $bin"
+          $bin -hide_banner -devices 2>&1 | tee /tmp/devices.txt
+          grep -q avfoundation /tmp/devices.txt
+          # Listing devices fails (no input given) but must reach the AVFoundation code.
+          $bin -hide_banner -f avfoundation -list_devices true -i "" 2>&1 | grep -i "AVFoundation" | head -3
+      - name: Package
+        run: |
+          cd out/${{ matrix.arch }}
+          zip -9 ../ffmpeg-mac-${{ matrix.arch }}.zip ffmpeg BUILD-INFO.txt
+          cd ..
+          shasum -a 256 ffmpeg-mac-${{ matrix.arch }}.zip | tee ffmpeg-mac-${{ matrix.arch }}.zip.sha256
+          ls -l ffmpeg-mac-${{ matrix.arch }}.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-mac-${{ matrix.arch }}
+          path: |
+            out/ffmpeg-mac-${{ matrix.arch }}.zip
+            out/ffmpeg-mac-${{ matrix.arch }}.zip.sha256
+
+  publish:
+    needs: build
+    if: inputs.publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: feed
+          pattern: ffmpeg-mac-*
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -l feed
+          gh release create "ffmpeg-min-${{ github.run_number }}" --prerelease --title "ffmpeg minimal ${{ github.run_number }}" \
+            --notes "Minimal GPL ffmpeg for Sada Studio (scripts/build-ffmpeg-min.sh, BUILD-INFO.txt inside each zip lists sources and checksums)." feed/*
