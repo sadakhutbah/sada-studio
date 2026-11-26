@@ -309,17 +309,9 @@ export const selectScenes = createSelector(
 );
 
 /** What the programme looks like right now, optimistic values included: what the local compositor draws. */
-export interface ProgramView {
-  scene: string;
-  /** Kind of the current scene ("camera" while it is unknown: nothing covers the camera). */
-  sceneKind: SceneKind;
-  /** Every scene carries its `scene_kind`. */
-  scenes: RegieScene[];
-  overlays: LiveOverlays;
-  /** The local microphone (the truth for what this computer sends). */
-  micMuted: boolean;
-  compositing: Compositing;
-}
+/** The programme to compose: one definition, in `@core/program/types` (shared with the compositor). */
+export type { ProgramView } from "../program/types";
+import type { ProgramView } from "../program/types";
 
 export const selectProgramView = createSelector(
   [selectView, selectScenes, (s: RegieRootState) => s.regie.mic.muted],
@@ -332,6 +324,7 @@ export const selectProgramView = createSelector(
       overlays: view.overlays,
       micMuted,
       compositing: view.compositing,
+      transition: view.transition,
     };
   },
 );

@@ -3,6 +3,7 @@ import { ApiError, DeviceRevokedError } from "../errors";
 import { t } from "../messages";
 import type { WhipSignaling } from "../transport/whip";
 import type {
+  AssetFetch,
   CurrentLive,
   DeviceCredentials,
   HealthCheck,
@@ -12,13 +13,14 @@ import type {
   MuteResponse,
   TransitionResponse,
   OverlayKind,
-  OverlayLayerFetch,
   OverlayUpdateResponse,
   PairingApi,
   PairingChallenge,
   PairPoll,
   RegieData,
   RotatedCredentials,
+  ScreenDescriptor,
+  ScreenFetch,
   SetupOrchestrator,
   SetupState,
   Slot,
@@ -191,15 +193,38 @@ export class SadaHttpApi implements StudioApi {
     });
   }
 
+  /** The mosque logo the studio draws in its logo overlay (the raw square logo; 404: none configured). */
+  async getLiveLogo(etag: string | null): Promise<AssetFetch> {
+    return this.png(`${API}/studio/live/logo.png`, etag);
+  }
+
   /**
-   * The overlay layer the engine draws for the live (or the rehearsal, setup view open), revalidated by ETag:
-   * the server answers 304 while nothing changed, so polling it costs nothing.
+   * A scene as the engine would draw it (1280×720; transparent for a banner, opaque for a full screen): the fallback
+   * when the screen has no template or the local rendering failed. `setup`: the rehearsal's (setup view open).
    */
-  async getOverlayLayer(etag: string | null): Promise<OverlayLayerFetch> {
+  async getSceneImage(id: string, setup: boolean, etag: string | null): Promise<AssetFetch> {
+    return this.png(`${API}/studio/live/scene/${encodeURIComponent(id)}.png${setup ? "?setup=1" : ""}`, etag);
+  }
+
+  /** A screen of the mosque's template, to be rendered by the studio (see `ScreenDescriptor`). */
+  async getScreen(ecran: string, setup: boolean, etag: string | null): Promise<ScreenFetch> {
+    const headers: Record<string, string> = {};
+    if (etag) headers["If-None-Match"] = etag;
+    const res = await this.raw("GET", `${API}/studio/live/screen/${encodeURIComponent(ecran)}${setup ? "?setup=1" : ""}`, { headers, device: true });
+    if (res.status === 304) return { changed: false };
+    if (res.status === 404) return { changed: true, etag: "", screen: null };
+    const data = await this.check(res);
+    if (res.status !== 200 || !data) throw new ApiError(res.status, t("api.httpError", { status: res.status }));
+    return { changed: true, etag: res.headers.get("etag") ?? "", screen: normalizeScreen(data) };
+  }
+
+  /** A PNG revalidated by ETag: 304 → unchanged, 404 → none, anything but a PNG → error. */
+  private async png(path: string, etag: string | null): Promise<AssetFetch> {
     const headers: Record<string, string> = { Accept: "image/png" };
     if (etag) headers["If-None-Match"] = etag;
-    const res = await this.raw("GET", `${API}/live/regie/overlays.png${this.setupMode ? "?setup=1" : ""}`, { headers, device: true });
+    const res = await this.raw("GET", path, { headers, device: true });
     if (res.status === 304) return { changed: false };
+    if (res.status === 404) return { changed: true, etag: "", png: null };
     if (!res.ok) await this.check(res);
     const type = res.headers.get("content-type") ?? "";
     if (res.status !== 200 || !type.startsWith("image/png")) throw new ApiError(res.status, t("api.httpError", { status: res.status }));
@@ -410,4 +435,26 @@ export function normalizeReply(d: Record<string, unknown>): HeartbeatReply {
   const reply: HeartbeatReply = { config: cfg, schedule, command: d.command === "live" ? "live" : "idle", current };
   if (credentials) reply.credentials = credentials;
   return reply;
+}
+
+/** Lenient reading of a screen description: anything unusable falls back to the engine's picture. */
+export function normalizeScreen(d: Record<string, unknown>): ScreenDescriptor {
+  const values: Record<string, string> = {};
+  if (d.values && typeof d.values === "object") {
+    for (const [k, v] of Object.entries(d.values as Record<string, unknown>)) {
+      if (/^[A-Za-z0-9_]{1,40}$/.test(k) && (typeof v === "string" || typeof v === "number")) values[k] = String(v);
+    }
+  }
+  const c = d.countdown as Record<string, unknown> | null | undefined;
+  const countdown =
+    c && typeof c.variable === "string" && /^[A-Za-z0-9_]{1,40}$/.test(c.variable) && typeof c.target === "string" ? { variable: c.variable, target: c.target } : null;
+  const html = typeof d.html === "string" && d.html ? d.html : null;
+  return {
+    source: d.source === "gabarit" && html ? "gabarit" : "engine",
+    html,
+    values,
+    countdown,
+    transparent: d.transparent === true,
+    png: typeof d.png === "string" ? d.png : "",
+  };
 }

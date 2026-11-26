@@ -33,7 +33,15 @@ export function createBroadcast(): {
     "camera",
     new Set(["screen"]),
   );
-  const compositor = new StudioSceneCompositor();
+  // The programme's pictures come through the main process (it holds the device secret and renders the template pages).
+  const compositor = new StudioSceneCompositor({
+    io: {
+      logo: (etag) => bridge.regie.logo(etag),
+      sceneImage: (id, setup, etag) => bridge.regie.sceneImage(id, setup, etag),
+      screen: (id, setup, etag) => bridge.regie.screen(id, setup, etag),
+      render: (req) => bridge.sources.scene.render(req),
+    },
+  });
   // Microphone + sound of the shared screen and of the web page: the live swaps its audio sender to the mix when one is audible.
   const audioMix = new AudioSourceMix();
   const composited = new CompositedSource(source, compositor, { audioMix });

@@ -6,7 +6,8 @@ import { screenAudioSupport } from "../core/sources/screen-audio";
 import type { DesktopSourceInfo } from "../core/sources/types";
 import type { IpcResult } from "../shared/ipc";
 import { BrowserSourceService } from "./browser-source";
-import { isDesktopSourceId, parseBrowserSourceUrl } from "./ipc-guards";
+import { isDesktopSourceId, parseBrowserSourceUrl, parseScreenRender } from "./ipc-guards";
+import { ScreenRenderService } from "./screen-render";
 import { openMediaSettings, screenAccessStatus } from "./media-access";
 
 const THUMBNAIL = { width: 240, height: 135 };
@@ -34,6 +35,8 @@ function requireScreenAccess(): void {
  */
 export function registerSources(getMain: () => BrowserWindow | null): { dispose(): void } {
   const browser = new BrowserSourceService();
+  // The mosque's screens (template pages) are rendered in a window of their own, never the web source's.
+  const screens = new ScreenRenderService();
   let selected: string | null = null;
   const pageAudio = new PageAudioGrant();
 
@@ -63,6 +66,12 @@ export function registerSources(getMain: () => BrowserWindow | null): { dispose(
   });
   ipcMain.on("sources:browser-frame-ack", (e) => {
     if (fromMain(e)) browser.ackFrame();
+  });
+
+  handle("sources:scene-render", (_e, req) => {
+    const r = parseScreenRender(req);
+    if (!r) throw new ApiError(0, t("ipc.invalidSource"));
+    return screens.render(r);
   });
 
   ipcMain.handle("sources:screen-access", (e) => (fromMain(e) ? screenAccessStatus() : "denied"));
@@ -121,6 +130,7 @@ export function registerSources(getMain: () => BrowserWindow | null): { dispose(
   return {
     dispose: () => {
       browser.dispose();
+      screens.dispose();
     },
   };
 }
