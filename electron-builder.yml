@@ -21,6 +21,8 @@ mac:
   category: public.app-category.video
   icon: build/icon.icns
   # Unsigned unless a certificate is supplied (CSC_LINK); CI sets CSC_IDENTITY_AUTO_DISCOVERY=false otherwise.
+  # Keep only the locales the app offers (saves the ~50 unused Chromium .lproj/ .pak locale packs).
+  electronLanguages: [fr, ar, en]
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
