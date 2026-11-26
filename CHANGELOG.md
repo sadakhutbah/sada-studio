@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/thesadaproject/sada-studio/compare/v0.4.0...v0.4.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **regie:** one Redux store for the Régie and the microphone, no visual rollback ([#32](https://github.com/thesadaproject/sada-studio/issues/32)) ([b3ef2f4](https://github.com/thesadaproject/sada-studio/commit/b3ef2f46b5db1425378c3464ac7042656425a1bc))
+
 ## [0.4.0](https://github.com/thesadaproject/sada-studio/compare/v0.3.1...v0.4.0) (2026-11-26)
 
 
