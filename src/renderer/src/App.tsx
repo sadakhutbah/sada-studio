@@ -1,10 +1,11 @@
-import { useKiosk } from "./hooks";
+import { useKiosk, useLocale } from "./hooks";
 import { PairScreen } from "./screens/PairScreen";
 import { ProjectorScreen } from "./screens/ProjectorScreen";
 import { StudioScreen } from "./screens/StudioScreen";
 
 /** No login or password: either the device is paired and working, or it asks to be paired. */
 export function App() {
+  useLocale(); // re-renders the whole tree when the language changes (no remount: a live in progress goes on)
   return location.hash === "#projector" ? <ProjectorScreen /> : <Operator />;
 }
 

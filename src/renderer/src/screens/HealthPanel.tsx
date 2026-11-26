@@ -1,5 +1,5 @@
 import type { HealthItem, HealthStatus } from "@core/health/health";
-import { fr } from "../strings";
+import { str } from "../strings";
 import { Card, Kicker } from "../ui";
 
 const TONE: Record<Exclude<HealthStatus, "na">, string> = {
@@ -11,7 +11,7 @@ const TONE: Record<Exclude<HealthStatus, "na">, string> = {
 
 /** "Workstation health": each problem is explained with its fix. Read-only. */
 export function HealthPanel({ items }: { items: HealthItem[] }) {
-  const t = fr.health;
+  const t = str.health;
   const shown = items.filter((i) => i.status !== "na");
   const issues = shown.filter((i) => i.status === "problem" || i.status === "warn");
   return (

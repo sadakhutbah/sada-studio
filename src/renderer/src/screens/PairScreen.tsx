@@ -3,12 +3,12 @@ import { formatCountdown } from "@core/kiosk/format";
 import type { KioskSnapshot } from "@shared/ipc";
 import { useNow } from "../hooks";
 import { loadPrefs, savePrefs } from "../prefs";
-import { fill, fr } from "../strings";
+import { fill, str } from "../strings";
 import { Brand, Btn, ErrorBox, Field, inputClass } from "../ui";
 
 /** First launch (or device removed): the instance address, then a large code to type in the console. */
 export function PairScreen({ kiosk }: { kiosk: KioskSnapshot }) {
-  const t = fr.pair;
+  const t = str.pair;
   const pairing = kiosk.phase === "pairing" ? kiosk.pairing : null;
   const now = useNow(pairing !== null);
   const [instance, setInstance] = useState(() => kiosk.baseUrl || loadPrefs().instance);
@@ -31,7 +31,7 @@ export function PairScreen({ kiosk }: { kiosk: KioskSnapshot }) {
         <div className="mb-5 text-center">
           <Brand />
           <p className="m-0 font-serif text-[2rem] leading-none text-deeper">
-            {fr.app.name} <span className="text-green">{fr.app.studio}</span>
+            {str.app.name} <span className="text-green">{str.app.studio}</span>
           </p>
         </div>
         <section className="rounded-[10px] border border-line bg-white p-6.5">

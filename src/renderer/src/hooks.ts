@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CaptureView } from "@core/capture/settings";
 import { createLevelMeter } from "@core/audio/meter";
 import { LiveKeeper } from "@core/kiosk/live-keeper";
@@ -7,6 +7,8 @@ import type { SessionState } from "@core/session/machine";
 import type { BroadcastSession, SessionSnapshot } from "@core/session/broadcast-session";
 import type { SourceOptions } from "@core/sources/types";
 import type { SetupState } from "@core/api/types";
+import { getLocale, type Locale } from "@core/messages";
+import { subscribeLocale } from "./strings";
 import { ApiError } from "@core/errors";
 import { IDLE_LIMIT_MS, isIdle, renewDelayMs, setupPhase, type SetupPhase } from "@core/setup/view";
 import { LAYER_POLL_MS, LAYER_RETRY_MS, layerMode, type LayerMode } from "@core/setup/overlay-layer";
@@ -14,6 +16,9 @@ import type { KioskSnapshot } from "@shared/ipc";
 import { Poller } from "@core/regie/poller";
 import { bridge } from "./bridge";
 import { createBroadcast } from "./studio";
+
+/** The language in use; the component re-renders when it changes. */
+export const useLocale = (): Locale => useSyncExternalStore(subscribeLocale, getLocale);
 
 export interface DeviceLists {
   cameras: MediaDeviceInfo[];
@@ -175,9 +180,10 @@ export function useHealth(kiosk: KioskSnapshot, cameras: number | null, micropho
     };
   }, []);
   const now = useNow(true);
+  const locale = useLocale(); // the checks are texts: recomputed in the new language
   return useMemo(
     () => evaluateHealth({ windows: facts, cameras, microphones, schedule: kiosk.schedule, now, vaultPersistent: kiosk.persistent }),
-    [facts, cameras, microphones, kiosk.schedule, kiosk.persistent, Math.floor(now / 60_000)], // eslint-disable-line
+    [facts, cameras, microphones, kiosk.schedule, kiosk.persistent, Math.floor(now / 60_000), locale], // eslint-disable-line
   );
 }
 

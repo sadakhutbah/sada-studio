@@ -115,6 +115,7 @@ const fr = {
   "control.invalidChange": "Réglage de raccourci ou d'API invalide.",
   "browser.audioFailed": "Le son de la page n'a pas pu être capté : la page est diffusée sans son.",
   "ipc.invalidSource": "Source invalide.",
+  "ipc.invalidLocale": "Langue invalide.",
   // Health checks
   "health.na": "Sans objet sur ce système.",
   "health.unreadable": "Réglage illisible.",
@@ -281,6 +282,7 @@ const en: Record<MessageKey, string> = {
   "control.invalidChange": "Invalid shortcut or API setting.",
   "browser.audioFailed": "The page's sound could not be captured: the page goes out without sound.",
   "ipc.invalidSource": "Invalid source.",
+  "ipc.invalidLocale": "Invalid language.",
   "health.na": "Not applicable on this system.",
   "health.unreadable": "Setting unreadable.",
   "health.camera.title": "Camera",

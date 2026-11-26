@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { backoffDelay } from "../core/kiosk/backoff";
 import { quitSystemLabel, t } from "../core/messages";
 import { registerControl } from "./control";
+import { registerLocale } from "./locale";
 import { registerProjector } from "./projector";
 import { registerSources } from "./sources";
 import { registerIpc, type Kiosk } from "./ipc";
@@ -166,17 +167,20 @@ function createAppMenu() {
   if (!app.isPackaged) app.dock?.setIcon(nativeImage.createFromPath(iconPath()));
 }
 
+/** The tray menu is built from the messages of the current language: rebuilt when it changes. */
+function trayMenu() {
+  return Menu.buildFromTemplate([
+    { label: t("tray.open"), click: showWindow },
+    { type: "separator" },
+    { label: t("quit.quit"), click: () => void requestQuit() },
+  ]);
+}
+
 function createTray() {
   const img = nativeImage.createFromPath(iconPath());
   tray = new Tray(img.isEmpty() ? img : img.resize({ width: 16, height: 16 }));
   tray.setToolTip("Sada Studio");
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: t("tray.open"), click: showWindow },
-      { type: "separator" },
-      { label: t("quit.quit"), click: () => void requestQuit() },
-    ]),
-  );
+  tray.setContextMenu(trayMenu());
   tray.on("click", showWindow);
 }
 
@@ -245,6 +249,11 @@ void app.whenReady().then(() => {
   if (app.isPackaged && (process.platform === "win32" || process.platform === "darwin")) {
     app.setLoginItemSettings({ openAtLogin: true, args: ["--autostart"] });
   }
+  // First: every message produced below speaks the chosen language (saved choice, else the system's).
+  registerLocale(app.getPath("userData"), () => {
+    tray?.setContextMenu(trayMenu());
+    createAppMenu();
+  });
   kiosk = registerIpc(app.getVersion());
   registerProjector(devUrl, () => win);
   sources = registerSources(() => win);

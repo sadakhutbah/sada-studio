@@ -14,7 +14,8 @@ import type { CalibrationView, CaptureSettings } from "@core/capture/settings";
 import { normalizeDelay } from "@core/capture/types";
 import { useBroadcast, useCapture, useDevices, useHealth, useKeeper, useLevel, useNow, useOverlayLayer, useReporter, useSetupMode } from "../hooks";
 import { loadPrefs, savePrefs, webcamDelayOf, webcamPairKey, type Prefs } from "../prefs";
-import { fill, fr } from "../strings";
+import { intlLocale } from "@core/messages";
+import { fill, str } from "../strings";
 import { t } from "@core/messages";
 import { Brand, Btn, Card, ErrorBox, Field, inputClass, Kicker, StatusPill, Title, type PillKey } from "../ui";
 import { bridge } from "../bridge";
@@ -30,7 +31,7 @@ import { HealthPanel } from "./HealthPanel";
 import { ProjectorPanel } from "./ProjectorPanel";
 import { SettingsPanel } from "./SettingsPanel";
 
-const kindLabel = (k: StreamKind) => fr.live[k];
+const kindLabel = (k: StreamKind) => str.live[k];
 
 export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   const { session: live, source, composited, compositor, audioMix, snapshot } = useBroadcast();
@@ -252,18 +253,18 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
 
   const elapsed = state.startedAt ? now - state.startedAt : 0;
   const nextSlot = kiosk.nextSlot;
-  const armedTime = nextSlot ? new Date(nextSlot.startsAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "";
+  const armedTime = nextSlot ? new Date(nextSlot.startsAt).toLocaleTimeString(intlLocale(), { hour: "2-digit", minute: "2-digit" }) : "";
 
   const pill: { key: PillKey; label: string } =
     state.status === "reconnecting"
-      ? { key: "reconnecting", label: fill(fr.status.reconnecting, { n: state.attempt }) }
+      ? { key: "reconnecting", label: fill(str.status.reconnecting, { n: state.attempt }) }
       : state.status !== "idle"
-        ? { key: state.status, label: fr.status[state.status] }
+        ? { key: state.status, label: str.status[state.status] }
         : kiosk.phase === "armed"
-          ? { key: "armed", label: fill(fr.status.armed, { time: armedTime }) }
+          ? { key: "armed", label: fill(str.status.armed, { time: armedTime }) }
           : kiosk.phase === "onair"
-            ? { key: "connecting", label: fr.status.connecting }
-            : { key: "standby", label: fr.status.standby };
+            ? { key: "connecting", label: str.status.connecting }
+            : { key: "standby", label: str.status.standby };
 
   const onAir = kiosk.wantLive || active || state.status === "stopping";
   const liveNow = kiosk.live;
@@ -286,7 +287,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const locked = onAir;
   const conflict = kiosk.conflict?.message ?? (state.errorCode === "conflict" ? state.error : null);
-  const since = kiosk.lastSeenAt ? new Date(kiosk.lastSeenAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "";
+  const since = kiosk.lastSeenAt ? new Date(kiosk.lastSeenAt).toLocaleTimeString(intlLocale(), { hour: "2-digit", minute: "2-digit" }) : "";
 
   // The local monitor (capture + server overlay layer): one element, shown alone or next to the programme in setup mode.
   const monitor = (
@@ -295,10 +296,10 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
           <RegiePreviewLayer view={regieView} layer={overlayLayer} />
           {!stream && (
             <div className="absolute inset-0 grid place-content-center gap-3 px-6 text-center text-night-muted">
-              <p className="m-0">{captureError ? `${captureError} ${fr.preview.retry}` : fr.preview.empty}</p>
+              <p className="m-0">{captureError ? `${captureError} ${str.preview.retry}` : str.preview.empty}</p>
               {captureError === t("media.deniedSystem") && (
                 <button type="button" className="mx-auto underline" onClick={() => void window.studio.media.openSettings("microphone")}>
-                  {fr.preview.openSettings}
+                  {str.preview.openSettings}
                 </button>
               )}
             </div>
@@ -322,11 +323,11 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
           <div className="flex items-center gap-2 text-[0.9rem]">
             <Btn variante="light" className="min-h-9! px-3! py-1.5!" aria-haspopup="dialog" onClick={() => setSettingsOpen(true)}>
               <span aria-hidden="true">⚙ </span>
-              {fr.settings.button}
+              {str.settings.button}
             </Btn>
             {confirmUnpair ? (
               <>
-                <span className="text-night-muted">{fr.nav.unpairHelp}</span>
+                <span className="text-night-muted">{str.nav.unpairHelp}</span>
                 <Btn
                   variante="danger"
                   className="min-h-9! px-3! py-1.5!"
@@ -335,15 +336,15 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
                     void window.studio.kiosk.unpair();
                   }}
                 >
-                  {fr.nav.yes}
+                  {str.nav.yes}
                 </Btn>
                 <Btn variante="light" className="min-h-9! px-3! py-1.5!" onClick={() => setConfirmUnpair(false)}>
-                  {fr.nav.no}
+                  {str.nav.no}
                 </Btn>
               </>
             ) : (
               <Btn variante="light" className="min-h-9! px-3! py-1.5!" disabled={onAir} onClick={() => setConfirmUnpair(true)}>
-                {fr.nav.unpair}
+                {str.nav.unpair}
               </Btn>
             )}
           </div>
@@ -377,19 +378,19 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
                   role="status"
                   className={`m-0 mb-2 text-[0.85rem] ${capture.alert ? "text-live" : capture.state.status === "running" ? "text-green" : "text-warn"}`}
                 >
-                  <span className="font-semibold">{fr.ipCamera.kindIp}</span>
+                  <span className="font-semibold">{str.ipCamera.kindIp}</span>
                   {" : "}
                   {capture.alert
-                    ? fr.ipCamera.alert
+                    ? str.ipCamera.alert
                     : capture.state.status === "reconnecting"
-                      ? fill(fr.ipCamera.state.reconnecting, { n: capture.state.attempt })
-                      : fr.ipCamera.state[capture.state.status]}
+                      ? fill(str.ipCamera.state.reconnecting, { n: capture.state.attempt })
+                      : str.ipCamera.state[capture.state.status]}
                   {capture.state.status !== "running" && capture.state.lastError ? ` — ${capture.state.lastError}` : ""}
                 </p>
               )}
               <div
                 role="meter"
-                aria-label={fr.preview.level}
+                aria-label={str.preview.level}
                 aria-valuemin={-60}
                 aria-valuemax={0}
                 aria-valuenow={Math.round(Math.max(-60, level.rms))}
@@ -403,32 +404,32 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
                   }}
                 />
               </div>
-              <p className="m-0 mt-1 text-[0.8rem] text-muted">{fr.preview.level}</p>
+              <p className="m-0 mt-1 text-[0.8rem] text-muted">{str.preview.level}</p>
             </div>
           </Card>
 
           <Card className="flex flex-wrap items-center gap-x-6 gap-y-3">
             <StatusPill status={pill.key} label={pill.label} />
-            <Metric label={fr.controls.duration} value={state.startedAt ? formatDuration(elapsed) : "—"} />
-            <Metric label={fr.controls.bitrate} value={state.status === "live" && stats.bitrateKbps ? formatBitrate(stats.bitrateKbps) : "—"} />
-            <Metric label={fr.controls.latency} value={stats.rttMs !== undefined && state.status === "live" ? `${stats.rttMs} ms` : "—"} />
+            <Metric label={str.controls.duration} value={state.startedAt ? formatDuration(elapsed) : "—"} />
+            <Metric label={str.controls.bitrate} value={state.status === "live" && stats.bitrateKbps ? formatBitrate(stats.bitrateKbps) : "—"} />
+            <Metric label={str.controls.latency} value={stats.rttMs !== undefined && state.status === "live" ? `${stats.rttMs} ms` : "—"} />
             <div className="ml-auto">
               {onAir && !confirmStop && (
                 <Btn variante="danger" disabled={state.status === "stopping"} onClick={() => setConfirmStop(true)}>
-                  {fr.stop.button}
+                  {str.stop.button}
                 </Btn>
               )}
             </div>
             {confirmStop && (
-              <div role="alertdialog" aria-label={fr.stop.confirmTitle} className="basis-full rounded-lg bg-err-bg px-4 py-3">
-                <p className="m-0 font-semibold text-[#7a1f20]">{fr.stop.confirmTitle}</p>
-                <p className="m-0 mb-2.5 text-[0.9rem] text-[#7a1f20]">{fr.stop.confirmHelp}</p>
+              <div role="alertdialog" aria-label={str.stop.confirmTitle} className="basis-full rounded-lg bg-err-bg px-4 py-3">
+                <p className="m-0 font-semibold text-[#7a1f20]">{str.stop.confirmTitle}</p>
+                <p className="m-0 mb-2.5 text-[0.9rem] text-[#7a1f20]">{str.stop.confirmHelp}</p>
                 <div className="flex gap-2">
                   <Btn variante="danger" onClick={() => void stop()}>
-                    {fr.stop.confirm}
+                    {str.stop.confirm}
                   </Btn>
                   <Btn variante="ghost" onClick={() => setConfirmStop(false)}>
-                    {fr.stop.keep}
+                    {str.stop.keep}
                   </Btn>
                 </div>
               </div>
@@ -459,69 +460,69 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
             <RegiePanel key={setup.wanted ? "setup" : "live"} onLiveChange={setRegieView} localSources={local.props} audio={{ level, muted, onToggleMute: toggleMute, error: muteError }} />
           )}
           <ProjectorPanel stream={stream} onAir={onAir} prefs={prefs} setPrefs={update} />
-          {kiosk.stopPending && <p className="m-0 text-[0.85rem] text-muted">{fr.stop.pending}</p>}
+          {kiosk.stopPending && <p className="m-0 text-[0.85rem] text-muted">{str.stop.pending}</p>}
           {state.status === "error" && state.error && state.errorCode !== "conflict" && <ErrorBox>{state.error}</ErrorBox>}
           {conflict && (
             <ErrorBox>
               {conflict}
-              {retry && ` ${fill(fr.box.retryIn, { t: formatCountdown(retry.at - now) })} ${fr.box.conflictLater}`}
+              {retry && ` ${fill(str.box.retryIn, { t: formatCountdown(retry.at - now) })} ${str.box.conflictLater}`}
             </ErrorBox>
           )}
           {!kiosk.online && (
             <p role="status" className="m-0 rounded-lg bg-warn-bg px-3 py-2 text-[0.9rem] text-warn">
-              {fill(fr.box.offline, { since: since ? fill(fr.box.since, { t: since }) : "" })}
+              {fill(str.box.offline, { since: since ? fill(str.box.since, { t: since }) : "" })}
             </p>
           )}
-          {kiosk.resuming && <p className="m-0 rounded-lg bg-warn-bg px-3 py-2 text-[0.9rem] text-warn">{fr.box.resuming}</p>}
+          {kiosk.resuming && <p className="m-0 rounded-lg bg-warn-bg px-3 py-2 text-[0.9rem] text-warn">{str.box.resuming}</p>}
           {kiosk.update && (
             <p className="m-0 rounded-lg bg-paper-2 px-3 py-2 text-[0.9rem] text-muted">
               {kiosk.update.downloading !== null
-                ? fill(fr.box.updateDownloading, { v: kiosk.update.version, p: kiosk.update.downloading })
+                ? fill(str.box.updateDownloading, { v: kiosk.update.version, p: kiosk.update.downloading })
                 : kiosk.update.waiting
-                ? fill(fr.box.updateWaiting, { v: kiosk.update.version, why: kiosk.update.waiting })
-                : fill(fr.box.updateReady, { v: kiosk.update.version })}
+                ? fill(str.box.updateWaiting, { v: kiosk.update.version, why: kiosk.update.waiting })
+                : fill(str.box.updateReady, { v: kiosk.update.version })}
             </p>
           )}
         </div>
 
         <aside className="grid content-start gap-4">
           <Card>
-            <Kicker>{fr.box.kicker}</Kicker>
-            <Title>{fill(fr.box.pairedTo, { name: kiosk.mosque?.name ?? "" })}</Title>
+            <Kicker>{str.box.kicker}</Kicker>
+            <Title>{fill(str.box.pairedTo, { name: kiosk.mosque?.name ?? "" })}</Title>
             <dl className="m-0 grid gap-2 text-[0.92rem]">
               {liveNow ? (
                 <div>
                   <dt className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-green">
-                    {liveNow.source === "manual" ? fr.box.sourceManual : fr.box.sourceSchedule}
+                    {liveNow.source === "manual" ? str.box.sourceManual : str.box.sourceSchedule}
                   </dt>
-                  <dd className="m-0 font-semibold text-deeper">{fill(fr.box.nextLine, { kind: kindLabel(liveNow.type), title: liveNow.title })}</dd>
+                  <dd className="m-0 font-semibold text-deeper">{fill(str.box.nextLine, { kind: kindLabel(liveNow.type), title: liveNow.title })}</dd>
                 </div>
               ) : (
                 <div>
-                  <dt className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-green">{fr.box.next}</dt>
+                  <dt className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-green">{str.box.next}</dt>
                   <dd className="m-0">
                     {nextSlot ? (
                       <>
-                        <span className="font-semibold text-deeper">{fill(fr.box.nextLine, { kind: kindLabel(nextSlot.type), title: nextSlot.title })}</span>
+                        <span className="font-semibold text-deeper">{fill(str.box.nextLine, { kind: kindLabel(nextSlot.type), title: nextSlot.title })}</span>
                         <br />
                         <span className="text-muted">{formatWhen(nextSlot.startsAt, now)}</span>
                       </>
                     ) : (
-                      <span className="text-muted">{fr.box.nextNone}</span>
+                      <span className="text-muted">{str.box.nextNone}</span>
                     )}
                   </dd>
                 </div>
               )}
             </dl>
-            {!kiosk.persistent && <p className="mb-0 mt-3 text-[0.82rem] text-muted">{fr.box.noVault}</p>}
+            {!kiosk.persistent && <p className="mb-0 mt-3 text-[0.82rem] text-muted">{str.box.noVault}</p>}
           </Card>
 
           <Card>
-            <Kicker>{fr.manual.kicker}</Kicker>
-            <Title>{fr.manual.title}</Title>
-            <p className="mb-3 mt-0 text-[0.85rem] text-muted">{onAir ? fr.manual.busy : fr.manual.hint}</p>
+            <Kicker>{str.manual.kicker}</Kicker>
+            <Title>{str.manual.title}</Title>
+            <p className="mb-3 mt-0 text-[0.85rem] text-muted">{onAir ? str.manual.busy : str.manual.hint}</p>
             <div className="grid gap-3.5">
-              <div role="radiogroup" aria-label={fr.live.kind} className="grid grid-cols-3 gap-1 rounded-[9px] bg-paper-2 p-1">
+              <div role="radiogroup" aria-label={str.live.kind} className="grid grid-cols-3 gap-1 rounded-[9px] bg-paper-2 p-1">
                 {(["khutba", "dars", "conference"] as StreamKind[]).map((k) => (
                   <button
                     key={k}
@@ -534,14 +535,14 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
                       prefs.kind === k ? "bg-deep text-white" : "text-deep hover:bg-white/60"
                     }`}
                   >
-                    {fr.live[k]}
+                    {str.live[k]}
                   </button>
                 ))}
               </div>
-              <Field label={fr.live.titleField}>
+              <Field label={str.live.titleField}>
                 <input
                   value={prefs.title}
-                  placeholder={fr.live.titlePlaceholder}
+                  placeholder={str.live.titlePlaceholder}
                   autoComplete="off"
                   disabled={locked}
                   onChange={(e) => update({ title: e.target.value })}
@@ -550,9 +551,9 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
               </Field>
               {manualError && <ErrorBox>{manualError}</ErrorBox>}
               <Btn disabled={!canManual} onClick={() => void startManual()}>
-                {starting ? fr.manual.starting : fr.manual.start}
+                {starting ? str.manual.starting : str.manual.start}
               </Btn>
-              {!onAir && prefs.title.trim() === "" && <p className="m-0 text-[0.82rem] text-muted">{fr.manual.needTitle}</p>}
+              {!onAir && prefs.title.trim() === "" && <p className="m-0 text-[0.82rem] text-muted">{str.manual.needTitle}</p>}
             </div>
           </Card>
 
