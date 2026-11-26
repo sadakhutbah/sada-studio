@@ -42,7 +42,11 @@ export class WhipTransport implements Transport {
     const pc = (this.opts.createPeer ?? (() => new RTCPeerConnection()))();
     this.pc = pc;
     try {
-      for (const track of stream.getTracks()) pc.addTransceiver(track, { direction: "sendonly", streams: [stream] });
+      for (const track of stream.getTracks()) {
+        if (track.kind === "video") track.contentHint = "motion";
+        const tr = pc.addTransceiver(track, { direction: "sendonly", streams: [stream] });
+        if (track.kind === "video") preferH264(tr);
+      }
       await this.limitVideoBitrate(pc, options.maxVideoKbps);
 
       pc.onicecandidate = (ev) => {
@@ -185,8 +189,30 @@ export class WhipTransport implements Transport {
       const params = sender.getParameters();
       params.encodings = params.encodings?.length ? params.encodings : [{}];
       params.encodings[0].maxBitrate = kbps * 1000;
+      (params as RTCRtpSendParameters & { degradationPreference?: string }).degradationPreference = "maintain-framerate";
       await sender.setParameters(params).catch(() => undefined);
     }
+  }
+}
+
+/**
+ * H.264 first: hardware-encoded on Mac (VideoToolbox) and Windows, and the orchestrator ingests it without a VP8 decode.
+ * Falls back to the browser default when H.264 is not offered.
+ */
+function preferH264(tr: RTCRtpTransceiver): void {
+  const caps = typeof RTCRtpSender !== "undefined" ? RTCRtpSender.getCapabilities?.("video") : null;
+  if (!caps || typeof tr.setCodecPreferences !== "function") return;
+  const h264 = caps.codecs.filter((c) => c.mimeType.toLowerCase() === "video/h264");
+  if (!h264.length) return;
+  // Baseline/constrained-baseline (42xxxx) with packetization-mode=1 first: the profile every decoder accepts.
+  const rank = (c: RTCRtpCodec) =>
+    (/profile-level-id=42/.test(c.sdpFmtpLine ?? "") ? 0 : 2) + (/packetization-mode=1/.test(c.sdpFmtpLine ?? "") ? 0 : 1);
+  h264.sort((a, b) => rank(a) - rank(b));
+  const rest = caps.codecs.filter((c) => c.mimeType.toLowerCase() !== "video/h264");
+  try {
+    tr.setCodecPreferences([...h264, ...rest]);
+  } catch {
+    /* keep the default order */
   }
 }
 
