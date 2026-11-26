@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/thesadaproject/sada-studio/compare/v0.2.5...v0.3.0) (2026-11-26)
+
+
+### Features
+
+* French and English interface with a language setting ([#19](https://github.com/thesadaproject/sada-studio/issues/19)) ([e2e2a4b](https://github.com/thesadaproject/sada-studio/commit/e2e2a4b4b8b9634c3721ca4ec024f8b16091f9b1))
+
+
+### Bug Fixes
+
+* **win:** accept unsigned updates so auto-update installs new versions ([#21](https://github.com/thesadaproject/sada-studio/issues/21)) ([ba3c790](https://github.com/thesadaproject/sada-studio/commit/ba3c7904b4b2fdafc84b4a0f5a780da72b1e3b07))
+
+## Changelog
+
 ## Unreleased
 
 ### Added
