@@ -29,15 +29,16 @@ mac:
     NSCameraUsageDescription: Sada Studio utilise la caméra pour diffuser les directs de la mosquée.
     NSMicrophoneUsageDescription: Sada Studio utilise le microphone pour diffuser le son des directs de la mosquée.
   target:
-    - { target: dmg, arch: [universal] }
-    - { target: zip, arch: [universal] }
-  artifactName: Sada-Studio-${version}-mac.${ext}
-  # ffmpeg for the IP camera + local microphone source: universal binary (arm64 + x64) shipped in
-  # Contents/Resources/ffmpeg/ffmpeg and signed with the bundle, fetched by scripts/fetch-ffmpeg-mac.mjs.
+    - { target: dmg, arch: [arm64, x64] }
+    - { target: zip, arch: [arm64, x64] }
+  # One build per architecture (no universal bundle: it would ship Chromium twice). The arch is in the file name so
+  # the four files sit side by side in one release; electron-builder writes a single latest-mac.yml listing them and
+  # electron-updater picks the zip matching the running architecture (arm64 in the name = Apple Silicon).
+  artifactName: Sada-Studio-${version}-mac-${arch}.${ext}
+  # ffmpeg for the IP camera + local microphone source: one single-arch binary per build, shipped in
+  # Contents/Resources/ffmpeg/ffmpeg, fetched by scripts/fetch-ffmpeg-mac.mjs into build/ffmpeg/mac-<arch>/.
   extraResources:
-    - { from: build/ffmpeg/mac, to: ffmpeg }
-  # Already universal: identical in the x64 and arm64 halves, so @electron/universal must copy it as is.
-  x64ArchFiles: Contents/Resources/ffmpeg/ffmpeg
+    - { from: "build/ffmpeg/mac-${arch}", to: ffmpeg }
 dmg:
   title: Sada Studio ${version}
 win:
