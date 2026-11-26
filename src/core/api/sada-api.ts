@@ -9,6 +9,8 @@ import type {
   HeartbeatReply,
   HeartbeatReport,
   LiveStatus,
+  MuteResponse,
+  TransitionResponse,
   OverlayKind,
   OverlayLayerFetch,
   OverlayUpdateResponse,
@@ -166,15 +168,15 @@ export class SadaHttpApi implements StudioApi {
     return this.json<LiveStatus>("POST", `${API}/studio/live/command`, { json: this.mark(body), device: true });
   }
 
-  async setTransition(mode: TransitionMode): Promise<{ ok: boolean; transition: TransitionMode }> {
-    return this.json<{ ok: boolean; transition: TransitionMode }>("POST", `${API}/live/regie/transition`, {
+  async setTransition(mode: TransitionMode): Promise<TransitionResponse> {
+    return this.json<TransitionResponse>("POST", `${API}/live/regie/transition`, {
       json: this.mark({ mode }),
       device: true,
     });
   }
 
-  async setMute(muted: boolean): Promise<{ ok: boolean; muted: boolean; mic_muted: boolean }> {
-    return this.json<{ ok: boolean; muted: boolean; mic_muted: boolean }>("POST", `${API}/live/regie/mute`, {
+  async setMute(muted: boolean): Promise<MuteResponse> {
+    return this.json<MuteResponse>("POST", `${API}/live/regie/mute`, {
       json: this.mark({ muted }),
       device: true,
       // Shorter than the default: the microphone must not wait on a server that does not answer.

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StreamKind } from "@core/api/types";
 import { meterPosition } from "@core/audio/meter";
 import { InputAudioMixer } from "@core/audio/mixer";
-import { MuteSync, type MuteOutcome } from "@core/audio/mute-sync";
+import { MuteSync } from "@core/audio/mute-sync";
+import { Provider } from "react-redux";
 import { formatCountdown, formatWhen } from "@core/kiosk/format";
 import { isActive } from "@core/session/machine";
 import type { SourceOptions } from "@core/sources/types";
@@ -20,6 +21,8 @@ import { t } from "@core/messages";
 import { Brand, Btn, Card, ErrorBox, Field, inputClass, Kicker, StatusPill, Title, type PillKey } from "../ui";
 import { bridge } from "../bridge";
 import { runControlAction, type ControlContext } from "../control-actions";
+import { createStudioStore, muteWarningText, storeControl, useStoreValue } from "../store";
+import { toggleMic } from "@core/regie/thunks";
 import { useLocalSources } from "../local-sources";
 import { RegiePanel } from "../components/RegiePanel";
 import { RegiePreviewLayer } from "../components/RegiePreviewLayer";
@@ -51,27 +54,18 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   const level = useLevel(stream);
   // Incoming-audio mute: tracks are enabled/disabled live, without touching the transport.
   const mixer = useMemo(() => new InputAudioMixer(), []);
-  const [muted, setMuted] = useState(false);
-  useEffect(() => mixer.subscribe(setMuted), [mixer]);
   useEffect(() => {
     // The microphone itself is what the mute acts on: with the mix on air, a muted microphone is silent in the mix while
     // the sound of the screen and of the page goes on.
     if (stream) mixer.mix([composited.rawStream ?? stream]);
   }, [mixer, composited, stream]);
   useEffect(() => () => mixer.dispose(), [mixer]);
-  const [muteError, setMuteError] = useState<string | null>(null);
-  // The orchestrator mirrors the state so the web Régie shows it too. Muting always holds here (a safety), the server is
-  // told best effort with retries; restoring only happens once the server confirmed.
-  const muteSync = useMemo(() => new MuteSync(mixer, (m) => bridge.regie.setMute(m), { onSynced: () => setMuteError(null) }), [mixer]);
-  const reportMute = (o: MuteOutcome) => {
-    if (o.error) setMuteError(t("mute.restoreFailed", { detail: o.error.message }));
-    else if (o.warning) setMuteError(t("mute.pending", { detail: o.warning.message }));
-    return o;
-  };
-  const toggleMute = () => {
-    setMuteError(null);
-    void muteSync.toggle().then(reportMute);
-  };
+  // Mute and restore apply here at once; the orchestrator mirrors the value (best effort, retries) for the web Régie.
+  // One Redux store holds the Régie and the microphone for the panel, the shortcuts and the local API.
+  const muteSync = useMemo(() => new MuteSync(mixer, (m) => bridge.regie.setMute(m)), [mixer]);
+  const regieStore = useMemo(() => createStudioStore(muteSync), [muteSync]);
+  const mic = useStoreValue(regieStore, (s) => s.regie.mic);
+  const toggleMute = () => void regieStore.dispatch(toggleMic());
   // Shortcuts and the local API: the main process asks this window to run an action; the answer says what the screen shows now.
   const controlContext = useRef<ControlContext | null>(null);
   useEffect(
@@ -136,15 +130,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
 
   useEffect(() => {
     controlContext.current = {
-      mic: {
-        muted: () => mixer.isMuted(),
-        set: async (target) => {
-          if (mixer.isMuted() === target) return { error: null };
-          setMuteError(null);
-          const o = reportMute(await muteSync.set(target));
-          return { error: o.error ? t("mute.restoreFailed", { detail: o.error.message }) : null, warning: o.warning ? t("mute.pending", { detail: o.warning.message }) : null };
-        },
-      },
+      ...storeControl(regieStore),
       browser: local.control.browser,
       screen: local.control.screen,
     };
@@ -464,7 +450,9 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
           {/* Remounted on a mode change: the panel reads the rehearsal's scenes and overlays, or the live's again.
               While the setup mode is being entered it is not mounted: its first read would still address the live. */}
           {(!setup.wanted || setup.state) && (
-            <RegiePanel key={setup.wanted ? "setup" : "live"} onLiveChange={setRegieView} localSources={local.props} audio={{ level, muted, onToggleMute: toggleMute, error: muteError }} />
+            <Provider store={regieStore}>
+              <RegiePanel key={setup.wanted ? "setup" : "live"} onLiveChange={setRegieView} localSources={local.props} audio={{ level, muted: mic.muted, onToggleMute: toggleMute, error: muteWarningText(mic) }} />
+            </Provider>
           )}
           <ProjectorPanel stream={stream} onAir={onAir} prefs={prefs} setPrefs={update} />
           {kiosk.stopPending && <p className="m-0 text-[0.85rem] text-muted">{str.stop.pending}</p>}

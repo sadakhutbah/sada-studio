@@ -3,7 +3,7 @@ import { isSceneAction, type ControlRequest, type ControlResult } from "./action
 export interface ControlDeps {
   /** Actions on the window (microphone, web source, screen share). */
   window(request: ControlRequest): Promise<ControlResult>;
-  /** Scene changes, done in the main process through the Sada server. */
+  /** Scene changes: through the window's Régie store, or the main process talking to the Sada server. */
   scene(request: ControlRequest): Promise<ControlResult>;
 }
 
