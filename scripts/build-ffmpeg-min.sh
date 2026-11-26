@@ -65,7 +65,8 @@ else
 fi
 
 echo "== x264"
-(cd x264 && CFLAGS="${EXTRA_CFLAGS[*]:-}" LDFLAGS="${EXTRA_CFLAGS[*]:-}" ASFLAGS="${EXTRA_CFLAGS[*]:-}" ./configure "${X264_ARGS[@]}" >/dev/null && make -j"$JOBS" >/dev/null 2>&1 && make install >/dev/null 2>&1)
+# (no ASFLAGS: x264 drives nasm itself on x86_64; "-arch" is a compiler flag, not a nasm one)
+(cd x264 && CFLAGS="${EXTRA_CFLAGS[*]:-}" LDFLAGS="${EXTRA_CFLAGS[*]:-}" ./configure "${X264_ARGS[@]}" > "$WORK/x264.log" 2>&1 && make -j"$JOBS" >> "$WORK/x264.log" 2>&1 && make install >> "$WORK/x264.log" 2>&1) || { tail -40 "$WORK/x264.log"; tail -30 x264/config.log 2>/dev/null; exit 1; }
 
 COMPONENTS=(
   # Inputs: RTSP (+ SDP/RTP underneath), raw PCM test source. Camera/microphone decoders: whatever cameras send as video

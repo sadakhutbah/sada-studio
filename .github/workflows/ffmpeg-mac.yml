@@ -37,11 +37,13 @@ jobs:
           ls -l out/${{ matrix.arch }}/ffmpeg
       - name: Test (RTSP, capture and calibration argument sets)
         run: |
-          mediamtx >/tmp/mediamtx.log 2>&1 &
+          printf 'rtspTransports: [tcp]\nrtmp: no\nhls: no\nwebrtc: no\nsrt: no\napi: no\nmetrics: no\nplayback: no\nrtspAddress: 127.0.0.1:8554\npaths:\n  cam:\n' > /tmp/mtx.yml
+          mediamtx /tmp/mtx.yml >/tmp/mediamtx.log 2>&1 &
           sleep 2
           ffmpeg -hide_banner -loglevel error -re -f lavfi -i "testsrc2=size=1280x720:rate=25" -t 300 \
-            -c:v libx264 -preset ultrafast -tune zerolatency -pix_fmt yuv420p -g 25 -rtsp_transport tcp -f rtsp rtsp://127.0.0.1:8554/cam &
+            -c:v libx264 -preset ultrafast -tune zerolatency -pix_fmt yuv420p -g 25 -rtsp_transport tcp -f rtsp rtsp://127.0.0.1:8554/cam 2>/tmp/pub.log &
           sleep 3
+          cat /tmp/pub.log /tmp/mediamtx.log
           if [ "${{ matrix.arch }}" = x64 ]; then
             # Intel binary on the Apple Silicon runner, through Rosetta.
             softwareupdate --install-rosetta --agree-to-license || true
@@ -52,6 +54,11 @@ jobs:
           else
             scripts/test-ffmpeg-min.sh out/arm64/ffmpeg rtsp://127.0.0.1:8554/cam
           fi
+      - name: Logs on failure
+        if: failure()
+        run: |
+          echo "--- mediamtx"; cat /tmp/mediamtx.log || true
+          echo "--- publisher"; cat /tmp/pub.log || true
       - name: avfoundation is built in
         run: |
           bin=out/${{ matrix.arch }}/ffmpeg

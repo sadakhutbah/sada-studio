@@ -10,6 +10,7 @@ set -euo pipefail
 FF="$(cd "$(dirname "${1:?ffmpeg under test}")" && pwd)/$(basename "$1")"
 URL="${2:?rtsp url}"
 REF="${3:-ffmpeg}"
+tmo() { perl -e 'alarm shift; exec @ARGV' "$@"; }  # macOS has no timeout(1)
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
@@ -19,7 +20,7 @@ RTSP=(-use_wallclock_as_timestamps 1 -fflags nobuffer -flags low_delay -rtsp_tra
 AUDIO=(-use_wallclock_as_timestamps 1 -f s16le -ar 48000 -ac 1 -i "$T/a.pcm")
 
 echo "== capture (8 s)"
-timeout 30 "$FF" -hide_banner -nostdin -loglevel error -progress pipe:2 -stats_period 2 -copyts -t 8 "${RTSP[@]}" "${AUDIO[@]}" \
+tmo 30 "$FF" -hide_banner -nostdin -loglevel error -progress pipe:2 -stats_period 2 -copyts -t 8 "${RTSP[@]}" "${AUDIO[@]}" \
   -map 0:v:0 -map 1:a:0 -vf "setpts=PTS-$CB/TB" -af "adelay=delays=100:all=1,aresample=async=1:min_hard_comp=0.25,asetpts=PTS-$CB/TB" \
   -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p -g 50 -c:a aac -b:a 128k -ar 48000 \
   -f mp4 -movflags +frag_keyframe+empty_moov+default_base_moof -frag_duration 500000 -flush_packets 1 pipe:1 > "$T/out.mp4" 2> "$T/cap.err" \
@@ -31,7 +32,7 @@ grep -q "Audio: aac" "$T/probe.txt" || { cat "$T/probe.txt"; fail "no aac stream
 echo "ok: $(grep -E 'Stream #0' "$T/probe.txt" | sed 's/^ *//' | cut -c1-110 | tr '\n' ';')"
 
 echo "== calibration (6 s)"
-timeout 30 "$FF" -hide_banner -nostdin -loglevel error -copyts -t 6 "${RTSP[@]}" -t 6 "${AUDIO[@]}" \
+tmo 30 "$FF" -hide_banner -nostdin -loglevel error -copyts -t 6 "${RTSP[@]}" -t 6 "${AUDIO[@]}" \
   -map 0:v:0 -vf "scale=64:36,format=gray,tblend=all_mode=difference,signalstats,metadata=mode=print:key=lavfi.signalstats.YAVG:file=$T/video.txt" -fps_mode passthrough -f null - \
   -map 1:a:0 -af "aresample=48000:async=1:min_hard_comp=0.25,asetnsamples=n=480:p=0,astats=metadata=1:reset=1,ametadata=mode=print:key=lavfi.astats.Overall.RMS_level:file=$T/audio.txt" -f null - \
   2> "$T/cal.err" || { cat "$T/cal.err"; fail "calibration exited non-zero"; }
