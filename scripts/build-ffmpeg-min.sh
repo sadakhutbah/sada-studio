@@ -75,8 +75,9 @@ COMPONENTS=(
   --enable-protocol=rtp,tcp,udp,file,pipe,crypto
   --enable-decoder=h264,hevc,mjpeg,rawvideo,aac,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_alaw,pcm_mulaw
   --enable-parser=h264,hevc,aac,mjpeg
+  # (pcm_s16le + wrapped_avframe: the default encoders of the `null` muxer used by the calibration.)
   # Output: libx264 + native AAC in fragmented MP4 on stdout; `null` muxer for the calibration.
-  --enable-encoder=libx264,aac,wrapped_avframe
+  --enable-encoder=libx264,aac,wrapped_avframe,pcm_s16le
   --enable-muxer=mp4,null
   --enable-bsf=aac_adtstoasc,extract_extradata,h264_mp4toannexb,hevc_mp4toannexb
   # Filters really used (setpts/asetpts/adelay/aresample/scale/format are also inserted automatically).
