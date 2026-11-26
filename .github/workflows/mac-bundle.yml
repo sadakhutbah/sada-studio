@@ -1,0 +1,52 @@
+name: macOS bundle check
+
+# Builds the unsigned (ad-hoc) macOS app exactly as the release job does, reports the sizes and runs the bundled ffmpeg
+# from inside each .app. Manual, and on pull requests that touch the packaging.
+
+on:
+  pull_request:
+    paths: [electron-builder.yml, scripts/fetch-ffmpeg-mac.mjs, .github/workflows/mac-bundle.yml, package.json]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/fetch-ffmpeg-mac.mjs
+      - name: Build (arm64 + x64, ad-hoc signed)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --mac --publish never -c.mac.identity=-
+      - name: Sizes and bundled ffmpeg
+        run: |
+          ls -l dist/*.dmg dist/*.zip dist/latest-mac.yml
+          cat dist/latest-mac.yml
+          for d in dist/mac-arm64 dist/mac; do
+            app="$d/Sada Studio.app"
+            [ -d "$app" ] || continue
+            du -sm "$app"
+            file "$app/Contents/Resources/ffmpeg/ffmpeg"
+            ls -l "$app/Contents/Resources/ffmpeg/ffmpeg"
+            codesign -dv "$app" 2>&1 | grep -E "Identifier|Signature" || true
+            ls "$app/Contents/Resources" | grep lproj | tr '\n' ' '; echo
+          done
+          "dist/mac-arm64/Sada Studio.app/Contents/Resources/ffmpeg/ffmpeg" -hide_banner -version | head -1
+          arch -x86_64 "dist/mac/Sada Studio.app/Contents/Resources/ffmpeg/ffmpeg" -hide_banner -version | head -1 || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sada-studio-mac-check
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/latest-mac.yml
+          if-no-files-found: error
