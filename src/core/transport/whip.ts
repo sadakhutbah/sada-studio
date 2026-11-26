@@ -199,7 +199,7 @@ export class WhipTransport implements Transport {
  * H.264 first: hardware-encoded on Mac (VideoToolbox) and Windows, and the orchestrator ingests it without a VP8 decode.
  * Falls back to the browser default when H.264 is not offered.
  */
-function preferH264(tr: RTCRtpTransceiver): void {
+export function preferH264(tr: RTCRtpTransceiver): void {
   const caps = typeof RTCRtpSender !== "undefined" ? RTCRtpSender.getCapabilities?.("video") : null;
   if (!caps || typeof tr.setCodecPreferences !== "function") return;
   const h264 = caps.codecs.filter((c) => c.mimeType.toLowerCase() === "video/h264");
