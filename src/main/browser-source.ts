@@ -1,6 +1,6 @@
 import { BrowserWindow, session, type Session } from "electron";
 import { lookup } from "node:dns/promises";
-import { isAllowedBrowserRequest, isPrivateOrLocalHost, validateBrowserSourceUrl } from "../core/sources/browser-source";
+import { isAllowedBrowserRequest, isPrivateOrLocalHost, isReportableLoadFailure, isReportableLoadRejection, validateBrowserSourceUrl } from "../core/sources/browser-source";
 import { FrameGate, DEFAULT_FRAME_FPS, MAX_FRAME_FPS, fitWithin } from "../core/sources/frame-gate";
 import { t } from "../core/messages";
 import type { BrowserSourceFrame, BrowserSourceStatus } from "../core/sources/types";
@@ -111,12 +111,23 @@ export class BrowserSourceService {
         this.captureOnce(win);
       }
     } catch (e) {
-      if (this.win === win) {
+      // A cancelled load (redirect, new navigation) is not a failure; the page's own did-finish-load clears any error.
+      if (this.win === win && isReportableLoadRejection(e)) {
         const message = e instanceof Error ? e.message : String(e);
         this.setStatus({ ...this.status, loading: false, error: t("browser.loadFailed", { detail: message }) });
       }
     }
     return this.getStatus();
+  }
+
+  /**
+   * The page's main frame, whose sound the application window captures through `getDisplayMedia` (see sources.ts).
+   * The page stays muted on this computer: the capture does not need it audible, and nothing plays on the speakers.
+   */
+  audioFrame(): Electron.WebFrameMain | null {
+    const win = this.win;
+    if (!win || win.isDestroyed() || !this.status.active) return null;
+    return win.webContents.mainFrame;
   }
 
   reload(): BrowserSourceStatus {
@@ -215,7 +226,7 @@ export class BrowserSourceService {
 
     wc.on("did-fail-load", (_e, code, description, _url, isMainFrame) => {
       // A sub-frame or an aborted load (-3) is not a failure of the page.
-      if (!isMainFrame || this.win !== win || code === -3) return;
+      if (this.win !== win || !isReportableLoadFailure(code, isMainFrame)) return;
       this.setStatus({ ...this.status, loading: false, error: t("browser.loadFailed", { detail: description || String(code) }) });
     });
 

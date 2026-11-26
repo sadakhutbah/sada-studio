@@ -33,3 +33,32 @@ describe("WhipTransport.replaceTracks", () => {
     expect(peer.closed).toBe(false);
   });
 });
+
+describe("WhipTransport.replaceTracks overlapping swaps", () => {
+  it("ends on the latest stream when a swap away and back overlap (screen sound switched off and on at once)", async () => {
+    const cam = track("cam", "video");
+    const mic = track("mic", "audio");
+    const mix = track("mix", "audio");
+    const pending: (() => void)[] = [];
+    const sender = {
+      track: mix as MediaStreamTrack,
+      // Like WebRTC: `sender.track` only changes once replaceTrack settles.
+      replaceTrack: vi.fn((t: MediaStreamTrack) => new Promise<void>((res) => pending.push(() => { sender.track = t; res(); }))),
+    };
+    const video = { track: cam, replaceTrack: vi.fn(async () => undefined) };
+    const peer = new FakePeer();
+    peer.getSenders = () => [video, sender] as never;
+    const signaling = { offer: async () => ({ answer: "v=0\r\nanswer\r\n", resource: "/api/v1/live/studio/whip/s1" }), patchIce: async () => undefined, close: vi.fn(async () => undefined) };
+    const transport = new WhipTransport({ signaling, createPeer: () => peer as unknown as RTCPeerConnection });
+    await transport.connect(stream(cam, mix));
+
+    const off = transport.replaceTracks(stream(cam, mic)); // mix -> microphone, still in flight
+    const on = transport.replaceTracks(stream(cam, mix)); // back to the mix before the first settled
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+      pending.shift()?.();
+    }
+    await Promise.all([off, on]);
+    expect(sender.track).toBe(mix);
+  });
+});

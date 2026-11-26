@@ -1,6 +1,8 @@
 import { BrowserWindow, desktopCapturer, ipcMain, session, webContents, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
 import { ApiError } from "../core/errors";
 import { t } from "../core/messages";
+import { PageAudioGrant } from "../core/sources/page-audio-grant";
+import { screenAudioSupport } from "../core/sources/screen-audio";
 import type { DesktopSourceInfo } from "../core/sources/types";
 import type { IpcResult } from "../shared/ipc";
 import { BrowserSourceService } from "./browser-source";
@@ -33,6 +35,7 @@ function requireScreenAccess(): void {
 export function registerSources(getMain: () => BrowserWindow | null): { dispose(): void } {
   const browser = new BrowserSourceService();
   let selected: string | null = null;
+  const pageAudio = new PageAudioGrant();
 
   const mainContents = () => {
     const w = getMain();
@@ -53,12 +56,18 @@ export function registerSources(getMain: () => BrowserWindow | null): { dispose(
   handle("sources:browser-reload", () => browser.reload());
   handle("sources:browser-set-visible", (_e, visible) => browser.setVisible(Boolean(visible)));
   handle("sources:browser-stop", () => browser.stop());
+  handle("sources:browser-audio-arm", () => {
+    if (!browser.audioFrame()) return false;
+    pageAudio.arm(Date.now());
+    return true;
+  });
   ipcMain.on("sources:browser-frame-ack", (e) => {
     if (fromMain(e)) browser.ackFrame();
   });
 
   ipcMain.handle("sources:screen-access", (e) => (fromMain(e) ? screenAccessStatus() : "denied"));
   ipcMain.handle("sources:screen-open-settings", (e) => (fromMain(e) ? openMediaSettings("screen") : undefined));
+  handle("sources:screen-audio-support", () => screenAudioSupport(process.platform));
   handle("sources:screen-list", async (): Promise<DesktopSourceInfo[]> => {
     requireScreenAccess();
     const found = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: THUMBNAIL, fetchWindowIcons: false });
@@ -88,11 +97,19 @@ export function registerSources(getMain: () => BrowserWindow | null): { dispose(
         try {
           const main = mainContents();
           const caller = request.frame ? webContents.fromFrame(request.frame) : null;
+          // The page's sound, asked for by the window right after arming it: the page's own frame is the stream (the video
+          // track is unused and dropped by the window). Never the screen, never anything the page chose.
+          if (main && caller && caller.id === main.id && pageAudio.consume(Date.now())) {
+            const frame = browser.audioFrame();
+            return callback(frame ? { video: frame, audio: frame } : {});
+          }
           const s = screenAccessStatus();
           if (!main || !caller || caller.id !== main.id || !selected || s === "denied" || s === "restricted") return callback({});
           const sources = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 0, height: 0 } });
           const source = sources.find((x) => x.id === selected);
-          callback(source ? { video: source } : {});
+          // The sound of the share only where Electron can capture it (Windows loopback), and only when the page asked.
+          const withSound = request.audioRequested && screenAudioSupport(process.platform).supported;
+          callback(source ? { video: source, ...(withSound ? { audio: "loopback" as const } : {}) } : {});
         } catch {
           callback({});
         }

@@ -34,6 +34,7 @@ const isReport = (r: unknown): r is ClientReport =>
   !!r && typeof r === "object" && typeof (r as ClientReport).sessionState === "string" && typeof (r as ClientReport).camera === "boolean" && Array.isArray((r as ClientReport).checks);
 
 export interface Kiosk {
+  api: SadaHttpApi;
   supervisor: KioskSupervisor;
   capture: CaptureService;
   snapshot(): KioskSnapshot;
@@ -179,5 +180,5 @@ export function registerIpc(version: string): Kiosk {
   );
 
   supervisor.boot();
-  return { supervisor, capture, snapshot };
+  return { api, supervisor, capture, snapshot };
 }

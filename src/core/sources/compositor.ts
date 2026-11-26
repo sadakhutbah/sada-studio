@@ -1,3 +1,4 @@
+import type { OutputAudioMix } from "../audio/source-mix";
 import type { SceneCompositor } from "../extension-points";
 import { computeBrowserSourceRect, DEFAULT_BROWSER_SOURCE } from "./browser-source";
 import { chooseOutput, nextCanvasSize, streamKey, type CompositorDemand, type OutputMode } from "./compositor-logic";
@@ -205,6 +206,8 @@ export class StudioSceneCompositor implements SceneCompositor, OutputCompositor 
 export interface CompositedSourceOptions {
   /** False where there is no DOM (tests, node): the raw stream always goes out. */
   canvasAvailable?: boolean;
+  /** Mix of the microphone with the sound of the screen and of the web page; absent: the microphone alone goes out. */
+  audioMix?: OutputAudioMix;
 }
 
 /**
@@ -217,6 +220,9 @@ export class CompositedSource implements MediaSourceStrategy {
   private raw: MediaStream | null = null;
   private mode: OutputMode = "raw";
   private lastKey = "";
+  private acquiring = false;
+  private mixed: { key: string; stream: MediaStream } | null = null;
+  private readonly audioMix: OutputAudioMix | null;
   private readonly changeListeners = new Set<(s: MediaStream) => void>();
   private readonly canvasAvailable: boolean;
 
@@ -226,6 +232,14 @@ export class CompositedSource implements MediaSourceStrategy {
     opts: CompositedSourceOptions = {},
   ) {
     this.canvasAvailable = opts.canvasAvailable ?? typeof document !== "undefined";
+    this.audioMix = opts.audioMix ?? null;
+    // A source's sound becomes audible or silent: the audio sender swaps between the microphone and the mix.
+    this.audioMix?.onActiveChange(() => !this.acquiring && this.announce());
+  }
+
+  /** The source's own stream (camera, IP camera or screen with the microphone), before the canvas and the mix. */
+  get rawStream(): MediaStream | null {
+    return this.raw;
   }
 
   get outputMode(): OutputMode {
@@ -245,6 +259,13 @@ export class CompositedSource implements MediaSourceStrategy {
   async acquire(options: SourceOptions): Promise<MediaStream> {
     const raw = await this.inner.acquire(options);
     this.raw = raw;
+    this.acquiring = true;
+    try {
+      this.audioMix?.setMic(raw);
+      this.audioMix?.setInput("screen", this.inner.systemAudio?.() ?? null);
+    } finally {
+      this.acquiring = false;
+    }
     if (this.mode === "canvas") this.engageCanvas();
     const out = this.output(raw);
     this.lastKey = streamKey(out);
@@ -253,6 +274,8 @@ export class CompositedSource implements MediaSourceStrategy {
 
   release(): void {
     this.inner.release();
+    this.audioMix?.setInput("screen", null);
+    this.audioMix?.setMic(null);
     this.compositor.dispose();
     this.raw = null;
     this.lastKey = "";
@@ -279,7 +302,15 @@ export class CompositedSource implements MediaSourceStrategy {
   }
 
   private output(raw: MediaStream): MediaStream {
-    return this.mode === "canvas" && this.canvasAvailable ? this.compositor.compose([raw]) : raw;
+    const canvas = this.mode === "canvas" && this.canvasAvailable;
+    const mix = this.audioMix;
+    const mixTrack = mix?.active ? mix.track : null;
+    if (!mixTrack || typeof MediaStream !== "function") return canvas ? this.compositor.compose([raw]) : raw;
+    // The mixed sound replaces the microphone track; the picture is the canvas or the source's own.
+    const video = (canvas ? this.compositor.compose([raw]) : raw).getVideoTracks();
+    const key = [...video, mixTrack].map((t) => t.id).join("|");
+    if (this.mixed?.key !== key) this.mixed = { key, stream: new MediaStream([...video, mixTrack]) };
+    return this.mixed.stream;
   }
 
   private announce(): void {

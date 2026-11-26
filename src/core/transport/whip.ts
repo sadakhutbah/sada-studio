@@ -86,10 +86,26 @@ export class WhipTransport implements Transport {
     return out;
   }
 
-  /** Same connection, other media: each sender takes the new stream's track of its kind (WebRTC `replaceTrack`). */
-  async replaceTracks(stream: MediaStream): Promise<void> {
+  private replaceQueue: Promise<void> = Promise.resolve();
+  private wanted: MediaStream | null = null;
+
+  /**
+   * Same connection, other media: each sender takes the new stream's track of its kind (WebRTC `replaceTrack`).
+   * Calls are serialized and only the latest requested stream is applied: `sender.track` only changes once
+   * `replaceTrack` settles, so two overlapping swaps (e.g. sound off then on at once) used to compare against a stale
+   * track, skip the second one and leave the first one in place (a live that stays silent while the UI says it is on).
+   */
+  replaceTracks(stream: MediaStream): Promise<void> {
+    this.wanted = stream;
+    const run = this.replaceQueue.then(() => this.applyWanted());
+    this.replaceQueue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async applyWanted(): Promise<void> {
     const pc = this.pc;
-    if (!pc || this.closing) return;
+    const stream = this.wanted;
+    if (!pc || this.closing || !stream) return;
     for (const sender of pc.getSenders()) {
       const kind = sender.track?.kind;
       if (!kind) continue;

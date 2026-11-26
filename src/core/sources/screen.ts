@@ -1,5 +1,5 @@
 import { t } from "../messages";
-import type { MediaSourceStrategy, SourceOptions } from "./types";
+import { RAW_AUDIO_CONSTRAINTS, type MediaSourceStrategy, type SourceOptions } from "./types";
 
 /** What the screen source needs from `navigator.mediaDevices`. `getDisplayMedia` is absent in some embedders. */
 export type ScreenMediaDevices = Pick<MediaDevices, "getUserMedia"> & Partial<Pick<MediaDevices, "getDisplayMedia">>;
@@ -18,6 +18,7 @@ function optionsKey(o: SourceOptions): string {
   return JSON.stringify({
     sourceId: o.screen?.sourceId ?? "",
     includeMic: o.screen?.includeMic !== false,
+    systemAudio: o.screen?.systemAudio === true,
     audioDeviceId: o.audioDeviceId ?? "",
     audio: o.audio,
     video: o.video,
@@ -35,6 +36,7 @@ export class ScreenSource implements MediaSourceStrategy {
   readonly id = "screen";
   private stream: MediaStream | null = null;
   private ownedStreams: MediaStream[] = [];
+  private system: MediaStream | null = null;
   private key: string | null = null;
   private listeners = new Set<() => void>();
   private readonly mediaDevices: ScreenMediaDevices | null;
@@ -74,6 +76,9 @@ export class ScreenSource implements MediaSourceStrategy {
     this.ownedStreams.push(screenStream);
 
     const tracks: MediaStreamTrack[] = [...screenStream.getVideoTracks()];
+    // The loopback sound (when asked and given) is kept apart: the mix sets its volume, it is never sent as is.
+    const loopback = screenStream.getAudioTracks();
+    this.system = loopback.length > 0 && typeof MediaStream === "function" ? new MediaStream(loopback) : null;
 
     if (options.screen?.includeMic !== false) {
       try {
@@ -113,7 +118,8 @@ export class ScreenSource implements MediaSourceStrategy {
     if (devices.getDisplayMedia) {
       try {
         return await devices.getDisplayMedia({
-          audio: false,
+          // The loopback sound goes out untouched: no AGC (it ramped the level down within seconds), echo cancellation or denoising.
+          audio: options.screen?.systemAudio === true ? { ...RAW_AUDIO_CONSTRAINTS } : false,
           video: {
             width: { max: options.video?.width ?? 1920 },
             height: { max: options.video?.height ?? 1080 },
@@ -138,8 +144,13 @@ export class ScreenSource implements MediaSourceStrategy {
       }
     }
     this.ownedStreams = [];
+    this.system = null;
     this.stream = null;
     this.key = null;
+  }
+
+  systemAudio(): MediaStream | null {
+    return this.system;
   }
 
   onEnded(cb: () => void): () => void {

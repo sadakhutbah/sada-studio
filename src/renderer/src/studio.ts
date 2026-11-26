@@ -1,3 +1,4 @@
+import { AudioSourceMix } from "@core/audio/source-mix";
 import { CameraSource } from "@core/sources/camera";
 import { CompositedSource, StudioSceneCompositor } from "@core/sources/compositor";
 import { IpCameraSource } from "@core/sources/ip-camera";
@@ -24,6 +25,7 @@ export function createBroadcast(): {
   source: RoutingSource;
   composited: CompositedSource;
   compositor: StudioSceneCompositor;
+  audioMix: AudioSourceMix;
 } {
   // A shared screen the operator stops sharing must not end the live: the UI goes back to the camera instead.
   const source = new RoutingSource(
@@ -32,11 +34,13 @@ export function createBroadcast(): {
     new Set(["screen"]),
   );
   const compositor = new StudioSceneCompositor();
-  const composited = new CompositedSource(source, compositor);
+  // Microphone + sound of the shared screen and of the web page: the live swaps its audio sender to the mix when one is audible.
+  const audioMix = new AudioSourceMix();
+  const composited = new CompositedSource(source, compositor, { audioMix });
   const session = new BroadcastSession({
     source: composited,
     transportFactory: () => new WhipTransport({ signaling: whipSignaling }),
     connect: { maxVideoKbps: 4500 },
   });
-  return { session, source, composited, compositor };
+  return { session, source, composited, compositor, audioMix };
 }

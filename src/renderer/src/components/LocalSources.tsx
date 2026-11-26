@@ -8,6 +8,7 @@ import type {
   BrowserSourceStatus,
   DesktopSourceInfo,
 } from "@core/sources/types";
+import { removalStep, type RemovalEvent, type RemovalPhase } from "@core/sources/removal";
 import { Btn } from "../ui";
 import { fr as t } from "../strings";
 import { EyeBtn, inputCls, smallBtn } from "./regie-controls";
@@ -16,7 +17,16 @@ const CORNERS: BrowserSourceCorner[] = ["tl", "tr", "bl", "br"];
 const BROWSER_MODES: BrowserSourceMode[] = ["overlay", "fullscreen"];
 const BROWSER_SIZES: BrowserSourceSize[] = ["sm", "md", "lg"];
 
+/** Sound of a source in the live: on/off and volume (percent, 100 = the source's own level). */
+export interface SourceAudioControls {
+  enabled: boolean;
+  volume: number;
+  onEnabled: (enabled: boolean) => void;
+  onVolume: (percent: number) => void;
+}
+
 export interface BrowserSourceControls {
+  audio: SourceAudioControls;
   config: BrowserSourceConfig;
   status: BrowserSourceStatus;
   error: string | null;
@@ -31,6 +41,8 @@ export interface BrowserSourceControls {
 }
 
 export interface ScreenShareControls {
+  /** The system sound exists on this computer (Windows): `reason` says why not, otherwise. */
+  audio: SourceAudioControls & { supported: boolean; reason: string | null };
   active: boolean;
   sourceId: string;
   sources: DesktopSourceInfo[];
@@ -38,6 +50,8 @@ export interface ScreenShareControls {
   error: string | null;
   /** macOS refused the screen recording: the message comes with a button to the system settings. */
   denied: boolean;
+  /** The remembered source is gone: open the list to pick another one. */
+  suggestPick?: boolean;
   onRefresh: () => void;
   onSelect: (sourceId: string) => void;
   onToggle: () => void;
@@ -60,7 +74,30 @@ export function LocalSources({ browser, screen }: LocalSourcesProps) {
   );
 }
 
-function BrowserSourceRow({ config, status, error, onAdd, onRemove, onReload, onApplyUrl, onVisible, onLayout }: BrowserSourceControls) {
+function SourceAudioRow({ label, audio, disabled }: { label: string; audio: SourceAudioControls; disabled?: boolean }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 pl-9 text-[0.84rem] text-ink">
+      <label className="flex items-center gap-1.5">
+        <input type="checkbox" checked={audio.enabled} disabled={disabled} onChange={(e) => audio.onEnabled(e.target.checked)} />
+        <span>{label}</span>
+      </label>
+      <input
+        type="range"
+        min={0}
+        max={200}
+        step={5}
+        value={audio.volume}
+        disabled={disabled || !audio.enabled}
+        aria-label={`${t.regie.audioVolume} — ${label}`}
+        onChange={(e) => audio.onVolume(Number(e.target.value))}
+        className="w-36"
+      />
+      <span className="w-10 tabular-nums text-muted">{audio.volume} %</span>
+    </div>
+  );
+}
+
+function BrowserSourceRow({ audio, config, status, error, onAdd, onRemove, onReload, onApplyUrl, onVisible, onLayout }: BrowserSourceControls) {
   const [url, setUrl] = useState(config.url);
   const [seenUrl, setSeenUrl] = useState(config.url);
   // The address changed outside the field (restored, rewritten by the main process): state adjusted during render.
@@ -69,8 +106,16 @@ function BrowserSourceRow({ config, status, error, onAdd, onRemove, onReload, on
     setUrl(config.url);
   }
   const added = status.active;
+  // Removal asks first; showing or hiding never does (instant and reversible).
+  const [removal, setRemoval] = useState<RemovalPhase>("idle");
+  if (!added && removal !== "idle") setRemoval("idle");
+  const stepRemoval = (event: RemovalEvent) => {
+    const step = removalStep(removal, event);
+    setRemoval(step.phase);
+    if (step.remove) onRemove();
+  };
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5" onKeyDown={(e) => e.key === "Escape" && removal === "confirming" && stepRemoval("cancel")}>
       <div className="flex flex-wrap items-center gap-1.5">
         {added && (
           <EyeBtn
@@ -98,7 +143,7 @@ function BrowserSourceRow({ config, status, error, onAdd, onRemove, onReload, on
             <Btn variante="ghost" className={smallBtn} onClick={onReload}>
               {t.regie.browserReload}
             </Btn>
-            <Btn variante="dangerGhost" className={smallBtn} onClick={onRemove}>
+            <Btn variante="dangerGhost" className={smallBtn} disabled={removal === "confirming"} onClick={() => stepRemoval("ask")}>
               {t.regie.removeSource}
             </Btn>
           </>
@@ -108,6 +153,24 @@ function BrowserSourceRow({ config, status, error, onAdd, onRemove, onReload, on
           </Btn>
         )}
       </div>
+      {added && <SourceAudioRow label={t.regie.audioBrowser} audio={audio} />}
+      {added && removal === "confirming" && (
+        <div role="alertdialog" aria-label={t.regie.removeConfirmTitle} className="ml-9 rounded-lg bg-err-bg px-3 py-2.5">
+          <p className="m-0 font-semibold text-[#7a1f20]">{t.regie.removeConfirmTitle}</p>
+          <p className="m-0 mb-2 text-[0.85rem] text-[#7a1f20]">
+            {t.regie.removeConfirmHelp}
+            {config.visible ? ` ${t.regie.removeConfirmShown}` : ""}
+          </p>
+          <div className="flex gap-2">
+            <Btn variante="danger" className={smallBtn} onClick={() => stepRemoval("confirm")}>
+              {t.regie.removeConfirm}
+            </Btn>
+            <Btn variante="ghost" className={smallBtn} autoFocus onClick={() => stepRemoval("cancel")}>
+              {t.regie.removeKeep}
+            </Btn>
+          </div>
+        </div>
+      )}
       {added && (
         <div className="flex flex-wrap items-center gap-1.5 pl-9">
           <select
@@ -163,8 +226,14 @@ function BrowserSourceRow({ config, status, error, onAdd, onRemove, onReload, on
   );
 }
 
-function ScreenShareRow({ active, sourceId, sources, loading, error, denied, onRefresh, onSelect, onToggle, onOpenSettings }: ScreenShareControls) {
+function ScreenShareRow({ audio, active, sourceId, sources, loading, error, denied, suggestPick, onRefresh, onSelect, onToggle, onOpenSettings }: ScreenShareControls) {
   const [open, setOpen] = useState(false);
+  const [suggested, setSuggested] = useState(false);
+  // The remembered source no longer exists: the picker opens by itself, once (its list is already loaded).
+  if (suggestPick && !suggested) {
+    setSuggested(true);
+    setOpen(true);
+  }
   const chosen = sources.find((s) => s.id === sourceId);
   const toggleList = () => {
     if (!open) onRefresh();
@@ -221,6 +290,8 @@ function ScreenShareRow({ active, sourceId, sources, loading, error, denied, onR
           </div>
         </div>
       )}
+      <SourceAudioRow label={t.regie.audioScreen} audio={audio} disabled={!audio.supported} />
+      {!audio.supported && audio.reason && <p className="m-0 pl-9 text-[0.8rem] text-muted">{audio.reason}</p>}
       {error && (
         <p role="alert" className="m-0 text-[0.82rem] text-live">
           {error}
