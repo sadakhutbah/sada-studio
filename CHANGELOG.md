@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/thesadaproject/sada-studio/compare/v0.3.1...v0.4.0) (2026-11-26)
+
+
+### Features
+
+* **stream:** follow the broadcast quality chosen for the mosque (720p/1080p, frame rate, uplink) ([#31](https://github.com/thesadaproject/sada-studio/issues/31)) ([7e54b94](https://github.com/thesadaproject/sada-studio/commit/7e54b9451b4c797377586d57882872093d9c6575))
+
+
+### Performance Improvements
+
+* **whip:** prefer H.264 (hardware encode), keep framerate under pressure ([#28](https://github.com/thesadaproject/sada-studio/issues/28)) ([adbc13a](https://github.com/thesadaproject/sada-studio/commit/adbc13a03b82f69d892de6c45002676038934fc7))
+
 ## [0.3.1](https://github.com/thesadaproject/sada-studio/compare/v0.3.0...v0.3.1) (2026-11-26)
 
 
