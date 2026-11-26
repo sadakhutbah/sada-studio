@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/thesadaproject/sada-studio/compare/v0.4.1...v0.5.0) (2026-11-26)
+
+
+### Features
+
+* **program:** the studio composes scenes, template and overlays itself ([#34](https://github.com/thesadaproject/sada-studio/issues/34)) ([4607cd1](https://github.com/thesadaproject/sada-studio/commit/4607cd12fe6b39f4836433d720d79b005e835a2f))
+
 ## [0.4.1](https://github.com/thesadaproject/sada-studio/compare/v0.4.0...v0.4.1) (2026-11-26)
 
 
