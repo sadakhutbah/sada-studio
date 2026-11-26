@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, FatalError } from "../src/core/errors";
 import { SadaHttpApi, normalizeBaseUrl } from "../src/core/api/sada-api";
-import { WhipTransport } from "../src/core/transport/whip";
+import { WhipTransport, preferH264 } from "../src/core/transport/whip";
 import { FakePeer, fakeStream, startMockSada, type MockSada } from "./helpers";
 
 let mock: MockSada;
@@ -123,5 +123,43 @@ describe("instance address", () => {
     expect(() => normalizeBaseUrl("http://console.example.org")).toThrow(/https/);
     expect(normalizeBaseUrl("console.sadakhutbah.org/")).toBe("https://console.sadakhutbah.org");
     expect(normalizeBaseUrl("http://localhost:8080/x")).toBe("http://localhost:8080");
+  });
+});
+
+describe("preferH264", () => {
+  const codec = (mimeType: string, sdpFmtpLine?: string) => ({ mimeType, clockRate: 90000, ...(sdpFmtpLine ? { sdpFmtpLine } : {}) });
+  const withCapabilities = (codecs: unknown[], run: () => void) => {
+    vi.stubGlobal("RTCRtpSender", { getCapabilities: () => ({ codecs }) });
+    try {
+      run();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  };
+
+  it("puts the baseline packetization-mode=1 H.264 first, then the other H.264, then the rest", () => {
+    const vp8 = codec("video/VP8");
+    const high = codec("video/H264", "profile-level-id=640c1f;packetization-mode=1");
+    const baseline0 = codec("video/H264", "profile-level-id=42e01f;packetization-mode=0");
+    const baseline1 = codec("video/H264", "profile-level-id=42e01f;packetization-mode=1");
+    const setCodecPreferences = vi.fn();
+    withCapabilities([vp8, high, baseline0, baseline1], () => preferH264({ setCodecPreferences } as unknown as RTCRtpTransceiver));
+    expect(setCodecPreferences).toHaveBeenCalledWith([baseline1, baseline0, high, vp8]);
+  });
+
+  it("falls back to the browser default (VP8) when no H.264 is offered", () => {
+    const setCodecPreferences = vi.fn();
+    withCapabilities([codec("video/VP8"), codec("video/VP9")], () => preferH264({ setCodecPreferences } as unknown as RTCRtpTransceiver));
+    expect(setCodecPreferences).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when codec preferences are not supported, and survives a refused list", () => {
+    withCapabilities([codec("video/H264", "profile-level-id=42e01f")], () => {
+      expect(() => preferH264({} as unknown as RTCRtpTransceiver)).not.toThrow();
+      const refuse = vi.fn(() => {
+        throw new Error("InvalidModificationError");
+      });
+      expect(() => preferH264({ setCodecPreferences: refuse } as unknown as RTCRtpTransceiver)).not.toThrow();
+    });
   });
 });
