@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/thesadaproject/sada-studio/compare/v0.5.0...v0.6.0) (2026-11-27)
+
+
+### Features
+
+* **preview:** send the picture to the web control room when it asks for it ([#36](https://github.com/thesadaproject/sada-studio/issues/36)) ([4d3b82a](https://github.com/thesadaproject/sada-studio/commit/4d3b82a00b814203d3ad72559506a00c4cd8b3c5))
+
 ## [0.5.0](https://github.com/thesadaproject/sada-studio/compare/v0.4.1...v0.5.0) (2026-11-26)
 
 
