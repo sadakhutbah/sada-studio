@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CaptureView } from "@core/capture/settings";
 import { createLevelMeter } from "@core/audio/meter";
-import { LiveKeeper } from "@core/kiosk/live-keeper";
+import { DEFAULT_KEEPER_OPTIONS, LiveKeeper, type KeeperOptions } from "@core/kiosk/live-keeper";
 import { evaluateHealth, toChecks, type HealthItem } from "@core/health/health";
 import type { SessionState } from "@core/session/machine";
 import type { BroadcastSession, SessionSnapshot } from "@core/session/broadcast-session";
@@ -134,6 +134,7 @@ export function useKeeper(
   session: BroadcastSession,
   wanted: boolean,
   options: SourceOptions,
+  keeperOptions: KeeperOptions = DEFAULT_KEEPER_OPTIONS,
 ): { waitMs: number; at: number } | null {
   const [retry, setRetry] = useState<{ waitMs: number; at: number } | null>(null);
   const optionsRef = useRef(options);
@@ -142,14 +143,17 @@ export function useKeeper(
     optionsRef.current = options;
   });
   useEffect(() => {
-    const keeper = new LiveKeeper({
-      get snapshot() {
-        return session.snapshot;
+    const keeper = new LiveKeeper(
+      {
+        get snapshot() {
+          return session.snapshot;
+        },
+        subscribe: (fn) => session.subscribe(fn),
+        start: () => session.start(optionsRef.current),
+        stop: () => session.stop(),
       },
-      subscribe: (fn) => session.subscribe(fn),
-      start: () => session.start(optionsRef.current),
-      stop: () => session.stop(),
-    });
+      keeperOptions,
+    );
     keeperRef.current = keeper;
     const off = keeper.onRetry(setRetry);
     return () => {
@@ -157,7 +161,7 @@ export function useKeeper(
       keeper.dispose();
       keeperRef.current = null;
     };
-  }, [session]);
+  }, [session, keeperOptions]);
   useEffect(() => {
     keeperRef.current?.setWanted(wanted);
   }, [session, wanted]);
