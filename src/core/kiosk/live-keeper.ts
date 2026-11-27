@@ -22,6 +22,17 @@ export const DEFAULT_KEEPER_OPTIONS: KeeperOptions = {
 };
 
 /**
+ * The preview (control-room monitor) has no "another live is running" case: the server asks for it only while no live
+ * is ordered, and answers 409 for a request that lapsed or an input that is not push, both transient. A 409 therefore
+ * backs off like any other failure (5 to 60 s), not with the patient live-conflict delay (60 to 300 s) that would leave
+ * the monitor blank while the request is still renewed every 15 s.
+ */
+export const PREVIEW_KEEPER_OPTIONS: KeeperOptions = {
+  retry: DEFAULT_KEEPER_OPTIONS.retry,
+  conflictRetry: DEFAULT_KEEPER_OPTIONS.retry,
+};
+
+/**
  * Keeps the session in line with the server order: starts when we must broadcast, stops otherwise,
  * and retries after an error (camera missing, server unreachable, live already running) with growing delays.
  * It never restarts what the order no longer asks for; the decision to broadcast comes from `KioskState.wantLive`.

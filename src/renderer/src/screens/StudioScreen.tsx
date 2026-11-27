@@ -14,6 +14,7 @@ import type { KioskSnapshot } from "@shared/ipc";
 import type { CalibrationView, CaptureSettings } from "@core/capture/settings";
 import { normalizeDelay } from "@core/capture/types";
 import { useBroadcast, useCapture, useDevices, useHealth, useKeeper, useLevel, useNow, useReporter, useSetupMode } from "../hooks";
+import { PREVIEW_KEEPER_OPTIONS } from "@core/kiosk/live-keeper";
 import { loadPrefs, savePrefs, webcamDelayOf, webcamPairKey, type Prefs } from "../prefs";
 import { intlLocale } from "@core/messages";
 import { fill, str } from "../strings";
@@ -248,7 +249,7 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
     if (stream && previewSession.snapshot.state.status === "live") void previewSession.swapSource(sourceOptions);
   }, [stream, previewSource, previewSession]); // eslint-disable-line
   useEffect(() => compositor.setForceLocal(wantPreview), [compositor, wantPreview]);
-  useKeeper(previewSession, wantPreview, sourceOptions);
+  useKeeper(previewSession, wantPreview, sourceOptions, PREVIEW_KEEPER_OPTIONS);
   const previewing = previewSnapshot.state.status === "live";
   // With the IP camera, the PC's own devices do not matter: the capture's tracks are what counts.
   const health = useHealth(
