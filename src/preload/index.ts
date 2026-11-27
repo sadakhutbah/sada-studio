@@ -127,6 +127,9 @@ const bridge: StudioBridge = {
   whipOffer: (sdp) => ipcRenderer.invoke("studio:whip-offer", sdp),
   whipPatch: (resource, fragment) => ipcRenderer.invoke("studio:whip-patch", resource, fragment),
   whipClose: (resource) => ipcRenderer.invoke("studio:whip-close", resource),
+  previewWhipOffer: (sdp) => ipcRenderer.invoke("studio:preview-whip-offer", sdp),
+  previewWhipPatch: (resource, fragment) => ipcRenderer.invoke("studio:preview-whip-patch", resource, fragment),
+  previewWhipClose: (resource) => ipcRenderer.invoke("studio:preview-whip-close", resource),
   setup: {
     enter: () => ipcRenderer.invoke("setup:enter"),
     leave: () => ipcRenderer.invoke("setup:leave"),

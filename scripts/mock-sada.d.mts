@@ -18,6 +18,8 @@ export interface MockSada {
   now: () => number;
   failHeartbeats: number;
   heartbeatInterval: number;
+  /** The web control room asks for the device's picture (outside a live). */
+  preview: boolean;
   since: string;
   heartbeats(): Array<Record<string, any>>;
   approve(userCode?: string): void;

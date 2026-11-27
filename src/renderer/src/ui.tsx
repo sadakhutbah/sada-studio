@@ -70,11 +70,13 @@ export function ErrorBox({ children }: { children: ReactNode }) {
   );
 }
 
-export type PillKey = SessionStatus | "standby" | "armed";
+export type PillKey = SessionStatus | "standby" | "armed" | "preview";
 
 const PILL: Record<PillKey, string> = {
   standby: "bg-paper-2 text-muted",
   armed: "bg-warn-bg text-warn",
+  // the web control room watches the picture: nothing reaches the public
+  preview: "bg-[#e3f0ea] text-green",
   idle: "bg-paper-2 text-muted",
   connecting: "bg-warn-bg text-warn",
   live: "bg-live text-white",

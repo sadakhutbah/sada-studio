@@ -69,6 +69,7 @@ export class FakeApi implements StudioApi {
   pollQueue: PairPoll[] = [];
   starts = 0;
   readonly whip = { offer: async () => ({ answer: "", resource: "" }), patchIce: async () => undefined, close: async () => undefined };
+  readonly previewWhip = { offer: async () => ({ answer: "", resource: "" }), patchIce: async () => undefined, close: async () => undefined };
   unpairs = 0;
   unpairError: Error | null = null;
   machineNames: (string | undefined)[] = [];

@@ -43,6 +43,8 @@ export async function createMockSada({ port = 0, approveAfterMs = null, codeTtlS
     /** The next n heartbeats answer with this status (e.g. 500). */
     failHeartbeats: 0,
     heartbeatInterval: 30,
+    /** The web control room asks for the device's picture (outside a live). */
+    preview: false,
     /** Another publisher (OBS…) has held the stream since `since`. */
     otherPublisher: false,
     since: new Date(Date.now() - 12 * 60_000).toISOString(),
@@ -211,6 +213,7 @@ export async function createMockSada({ port = 0, approveAfterMs = null, codeTtlS
           token_path: "/api/v1/live/studio/token",
           whip_path: "/api/v1/live/studio/whip",
         },
+        preview: mock.preview && answer().command !== "live" ? { on: true, expires_in: 45, whip_path: "/api/v1/live/studio/preview/whip" } : null,
       };
       if (dev.rotate) {
         dev.prevSecret = dev.secret;
@@ -260,6 +263,15 @@ export async function createMockSada({ port = 0, approveAfterMs = null, codeTtlS
       if (answer().command !== "live") return json(409, { error: "This device is not ordered to broadcast.", code: "not_ordered" });
       res.writeHead(201, { "content-type": "application/sdp", location: "/api/v1/live/studio/whip/sess-1" });
       return res.end("v=0\r\nanswer\r\n");
+    }
+    if (path === "/api/v1/live/studio/preview/whip" && req.method === "POST") {
+      if (!mock.preview) return json(409, { error: "the control room is not asking for the picture", code: "not_requested" });
+      res.writeHead(201, { "content-type": "application/sdp", location: "/api/v1/live/studio/preview/whip/prev-1" });
+      return res.end("v=0\r\npreview\r\n");
+    }
+    if (path === "/api/v1/live/studio/preview/whip/prev-1") {
+      res.writeHead(req.method === "DELETE" ? 200 : 204);
+      return res.end();
     }
     if (path === "/api/v1/live/studio/whip/sess-1") {
       res.writeHead(req.method === "DELETE" ? 200 : 204);

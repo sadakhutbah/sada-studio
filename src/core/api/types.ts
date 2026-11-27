@@ -91,6 +91,11 @@ export interface HeartbeatReply {
   schedule: Slot[];
   command: LiveOrder;
   current: CurrentLive | null;
+  /**
+   * The web control room asks for this device's picture, outside a live: publish the programme to `previewWhip`
+   * while it stays true. Nothing of it is broadcast (the server's preview path is read by the control room only).
+   */
+  preview?: boolean;
 }
 
 export interface StreamMeta {
@@ -248,4 +253,6 @@ export interface StudioApi {
   /** The device leaves the mosque by itself; the server revokes its identity. */
   unpair(): Promise<void>;
   readonly whip: WhipSignaling;
+  /** WHIP of the preview the web control room asked for (refused with 409 when nobody asks any more). */
+  readonly previewWhip: WhipSignaling;
 }

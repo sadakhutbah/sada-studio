@@ -5,9 +5,10 @@ import { IpCameraSource } from "@core/sources/ip-camera";
 import { SourceRegistry } from "@core/sources/registry";
 import { RoutingSource } from "@core/sources/routing";
 import { ScreenSource } from "@core/sources/screen";
+import { SharedOutputSource } from "@core/sources/shared-output";
 import { BroadcastSession } from "@core/session/broadcast-session";
 import { WhipTransport } from "@core/transport/whip";
-import { bridge, whipSignaling } from "./bridge";
+import { bridge, previewWhipSignaling, whipSignaling } from "./bridge";
 import { MsePlayer } from "./mse-player";
 
 /** Available sources: PC camera, IP camera + local mic, and desktop screen share. */
@@ -22,6 +23,9 @@ export const sources = new SourceRegistry()
  */
 export function createBroadcast(): {
   session: BroadcastSession;
+  /** The web control room's preview: the same picture, to the preview endpoint, only while the server asks. */
+  previewSession: BroadcastSession;
+  previewSource: SharedOutputSource;
   source: RoutingSource;
   composited: CompositedSource;
   compositor: StudioSceneCompositor;
@@ -50,5 +54,12 @@ export function createBroadcast(): {
     transportFactory: () => new WhipTransport({ signaling: whipSignaling }),
     connect: { maxVideoKbps: 4500 },
   });
-  return { session, source, composited, compositor, audioMix };
+  const previewSource = new SharedOutputSource(composited);
+  const previewSession = new BroadcastSession({
+    source: previewSource,
+    transportFactory: () => new WhipTransport({ signaling: previewWhipSignaling }),
+    // a monitor, not the broadcast: a lighter stream is enough to see the scenes and the overlays
+    connect: { maxVideoKbps: 1500, maxHeight: 540 },
+  });
+  return { session, previewSession, previewSource, source, composited, compositor, audioMix };
 }

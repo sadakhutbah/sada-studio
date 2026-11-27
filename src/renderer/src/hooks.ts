@@ -49,9 +49,11 @@ export function useDevices(refreshKey: unknown): DeviceLists {
 export function useBroadcast() {
   const broadcast = useMemo(() => createBroadcast(), []);
   const [snapshot, setSnapshot] = useState<SessionSnapshot>(broadcast.session.snapshot);
+  const [previewSnapshot, setPreviewSnapshot] = useState<SessionSnapshot>(broadcast.previewSession.snapshot);
   useEffect(() => broadcast.session.subscribe(setSnapshot), [broadcast]);
+  useEffect(() => broadcast.previewSession.subscribe(setPreviewSnapshot), [broadcast]);
   useEffect(() => () => broadcast.composited.release(), [broadcast]);
-  return { ...broadcast, snapshot };
+  return { ...broadcast, snapshot, previewSnapshot };
 }
 
 const SILENT = { rms: -100, peak: -100 };

@@ -403,7 +403,8 @@ export class KioskSupervisor {
       this.persistNow();
       const asked = Number(reply.config.heartbeat_interval);
       const base = Number.isFinite(asked) && asked > 0 ? clamp(asked * 1000, 5_000, 120_000) : this.o.heartbeatMs;
-      const busy = this.state.phase === "onair" || this.state.phase === "armed";
+      // On air, arming, or streaming the control room's preview: beat often, so a stop is seen within seconds.
+      const busy = this.state.phase === "onair" || this.state.phase === "armed" || this.state.preview;
       this.rearm(busy ? Math.min(base, this.o.heartbeatLiveMs) : base);
     } catch (e) {
       this.lastBeatAt = Date.now();

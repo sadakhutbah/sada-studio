@@ -132,6 +132,7 @@ export const en: Strings = {
     idle: "Ready",
     standby: "Standby",
     armed: "Armed, live at {time}",
+    preview: "Feed sent to the web control room (off air)",
     connecting: "Connecting…",
     live: "Live",
     reconnecting: "Reconnecting… (attempt {n})",

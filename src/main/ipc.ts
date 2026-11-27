@@ -55,7 +55,7 @@ export function registerIpc(version: string): Kiosk {
     const s = snapshot();
     for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("kiosk:changed", s);
     // The screen stays on during arming and the live; the system never suspends while the application runs.
-    const need = s.phase === "onair" || s.phase === "armed";
+    const need = s.phase === "onair" || s.phase === "armed" || s.preview;
     if (need && displayBlocker === null) displayBlocker = powerSaveBlocker.start("prevent-display-sleep");
     if (!need && displayBlocker !== null) {
       powerSaveBlocker.stop(displayBlocker);
@@ -148,6 +148,13 @@ export function registerIpc(version: string): Kiosk {
     run(async () => (await api.whip.patchIce(resourceOf(resource), String(fragment)), null)),
   );
   ipcMain.handle("studio:whip-close", (_e, resource: unknown) => run(async () => (await api.whip.close(resourceOf(resource)), null)));
+  ipcMain.handle("studio:preview-whip-offer", (_e, sdp: unknown) => run(() => api.previewWhip.offer(String(sdp))));
+  ipcMain.handle("studio:preview-whip-patch", (_e, resource: unknown, fragment: unknown) =>
+    run(async () => (await api.previewWhip.patchIce(resourceOf(resource), String(fragment)), null)),
+  );
+  ipcMain.handle("studio:preview-whip-close", (_e, resource: unknown) =>
+    run(async () => (await api.previewWhip.close(resourceOf(resource)), null)),
+  );
   ipcMain.handle("setup:enter", () => run(() => api.setup.enter()));
   ipcMain.handle("setup:leave", () => run(async () => (await api.setup.leave(), null)));
   ipcMain.handle("setup:whep-offer", (_e, sdp: string) => run(() => api.setup.whepOffer(String(sdp))));

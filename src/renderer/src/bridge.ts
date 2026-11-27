@@ -16,6 +16,13 @@ export const whipSignaling: WhipSignaling = {
   close: async (resource) => void unwrap(await window.studio.whipClose(resource)),
 };
 
+/** The web control room's preview: published only while the server asks for it (`kiosk.preview`). */
+export const previewWhipSignaling: WhipSignaling = {
+  offer: async (sdp) => unwrap(await window.studio.previewWhipOffer(sdp)),
+  patchIce: async (resource, fragment) => void unwrap(await window.studio.previewWhipPatch(resource, fragment)),
+  close: async (resource) => void unwrap(await window.studio.previewWhipClose(resource)),
+};
+
 /** WHEP signalling of the setup programme view, through the main process (it holds the device secret). */
 export const whepSignaling: WhepSignaling = {
   offer: async (sdp) => unwrap(await window.studio.setup.whepOffer(sdp)),
