@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/thesadaproject/sada-studio/compare/v0.6.0...v0.6.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **preview:** back off 5-60 s on a 409 from the preview endpoint ([#38](https://github.com/thesadaproject/sada-studio/issues/38)) ([b6c3e54](https://github.com/thesadaproject/sada-studio/commit/b6c3e545fa5e68fbc82f3385da368a14b53224cd))
+
 ## [0.6.0](https://github.com/thesadaproject/sada-studio/compare/v0.5.0...v0.6.0) (2026-11-27)
 
 
