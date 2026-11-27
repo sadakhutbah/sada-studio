@@ -264,9 +264,15 @@ export class SadaHttpApi implements StudioApi {
     },
   };
 
-  readonly whip: WhipSignaling = {
+  readonly whip: WhipSignaling = this.whipAt(`${API}/live/studio/whip`);
+
+  /** The control room's preview: same protocol, its own endpoint (a preview token, the preview path only). */
+  readonly previewWhip: WhipSignaling = this.whipAt(`${API}/live/studio/preview/whip`);
+
+  private whipAt(endpoint: string): WhipSignaling {
+    return {
     offer: async (sdp) => {
-      const res = await this.raw("POST", `${API}/live/studio/whip`, { body: sdp, headers: { "Content-Type": SDP }, device: true });
+      const res = await this.raw("POST", endpoint, { body: sdp, headers: { "Content-Type": SDP }, device: true });
       await this.check(res);
       const location = res.headers.get("location");
       if (res.status !== 201 || !location) throw new ApiError(res.status, t("api.whipUnexpected", { status: res.status }));
@@ -278,7 +284,8 @@ export class SadaHttpApi implements StudioApi {
     close: async (resource) => {
       await this.raw("DELETE", resource, { device: true });
     },
-  };
+    };
+  }
 
   /** Only a path on the same instance is followed: a foreign Location never receives the device secret. */
   private sameOriginPath(location: string): string {
@@ -434,6 +441,8 @@ export function normalizeReply(d: Record<string, unknown>): HeartbeatReply {
     cr && typeof cr.device_secret === "string" && cr.device_secret ? { deviceId: String(cr.device_id ?? ""), deviceSecret: cr.device_secret } : undefined;
   const reply: HeartbeatReply = { config: cfg, schedule, command: d.command === "live" ? "live" : "idle", current };
   if (credentials) reply.credentials = credentials;
+  const pv = d.preview as Record<string, unknown> | null | undefined;
+  reply.preview = Boolean(pv && typeof pv === "object" && pv.on === true);
   return reply;
 }
 

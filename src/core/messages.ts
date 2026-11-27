@@ -33,6 +33,7 @@ const fr = {
   "whip.refused": "Liaison WebRTC refusée.",
   "whip.notAuthorized": "Cet appareil n'est plus autorisé à diffuser.",
   "session.deviceLost": "La caméra ou le micro a été déconnecté.",
+  "preview.noPicture": "Aucune image à envoyer : la caméra n'est pas encore ouverte.",
   // Supervisor
   "sup.alreadyPaired": "Cet appareil est déjà appairé.",
   "sup.titleRequired": "Saisissez un titre pour le direct.",
@@ -204,6 +205,7 @@ const en: Record<MessageKey, string> = {
   "whip.refused": "WebRTC link refused.",
   "whip.notAuthorized": "This device is no longer allowed to broadcast.",
   "session.deviceLost": "The camera or microphone was disconnected.",
+  "preview.noPicture": "No picture to send: the camera is not open yet.",
   "sup.alreadyPaired": "This device is already paired.",
   "sup.titleRequired": "Enter a title for the live.",
   "sup.serverReachable": "Sada server reachable.",

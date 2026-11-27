@@ -35,7 +35,7 @@ import { SettingsPanel } from "./SettingsPanel";
 const kindLabel = (k: StreamKind) => str.live[k];
 
 export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
-  const { session: live, source, composited, compositor, audioMix, snapshot } = useBroadcast();
+  const { session: live, previewSession, previewSource, previewSnapshot, source, composited, compositor, audioMix, snapshot } = useBroadcast();
   const { state, stats } = snapshot;
   const active = isActive(state);
   // Quality chosen for the mosque in the back office: capture size and rate, uplink ceiling (next connection).
@@ -239,6 +239,17 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
   }, [stream, setup.wanted]);
 
   const retry = useKeeper(live, kiosk.wantLive && capture !== null, sourceOptions);
+  // The web control room asks for our picture (outside a live): the capture the screen already holds goes, composed as it
+  // would go on air, to the preview endpoint. Never during a live (the live stream is what the control room watches).
+  const wantPreview = kiosk.preview && !kiosk.wantLive && !active && capture !== null && stream !== null;
+  useEffect(() => {
+    previewSource.setCurrent(stream);
+    // a new capture (another camera, a re-plugged one): the preview carries its tracks, on the same connection
+    if (stream && previewSession.snapshot.state.status === "live") void previewSession.swapSource(sourceOptions);
+  }, [stream, previewSource, previewSession]); // eslint-disable-line
+  useEffect(() => compositor.setForceLocal(wantPreview), [compositor, wantPreview]);
+  useKeeper(previewSession, wantPreview, sourceOptions);
+  const previewing = previewSnapshot.state.status === "live";
   // With the IP camera, the PC's own devices do not matter: the capture's tracks are what counts.
   const health = useHealth(
     kiosk,
@@ -260,7 +271,9 @@ export function StudioScreen({ kiosk }: { kiosk: KioskSnapshot }) {
           ? { key: "armed", label: fill(str.status.armed, { time: armedTime }) }
           : kiosk.phase === "onair"
             ? { key: "connecting", label: str.status.connecting }
-            : { key: "standby", label: str.status.standby };
+            : previewing
+              ? { key: "preview", label: str.status.preview }
+              : { key: "standby", label: str.status.standby };
 
   const onAir = kiosk.wantLive || active || state.status === "stopping";
   const liveNow = kiosk.live;

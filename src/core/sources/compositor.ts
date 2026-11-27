@@ -83,6 +83,7 @@ export class StudioSceneCompositor implements SceneCompositor, OutputCompositor 
   // --- programme (scenes and overlays, see setProgram) ---
   private program: ProgramView | null = null;
   private rehearsal = false;
+  private forceLocal = false;
   private readonly io: ProgramIO | null;
   private assets: ProgramAssets<ImageBitmap, HTMLCanvasElement> | null = null;
   private overlays: OverlayPainter | null = null;
@@ -120,7 +121,7 @@ export class StudioSceneCompositor implements SceneCompositor, OutputCompositor 
   setProgram(view: ProgramView | null): void {
     const prev = this.program;
     this.program = view;
-    const local = localCompositing(view, this.rehearsal);
+    const local = localCompositing(view, this.composesLocally);
     if (view && prev && local && prev.scene !== view.scene) {
       const mode = view.transition ?? "fade";
       const fromKind = this.transition && this.transition.startedAt === null ? this.transition.fromKind : prev.sceneKind;
@@ -149,6 +150,20 @@ export class StudioSceneCompositor implements SceneCompositor, OutputCompositor 
     this.programChanged();
   }
 
+  /**
+   * The web control room watches our picture (preview, outside a live): compose the programme here whatever
+   * `compositing` says, as it would go on air. Unlike the setup view, the live's own assets are used.
+   */
+  setForceLocal(on: boolean): void {
+    if (on === this.forceLocal) return;
+    this.forceLocal = on;
+    this.programChanged();
+  }
+
+  private get composesLocally(): boolean {
+    return this.rehearsal || this.forceLocal;
+  }
+
   /** The canvas is needed by the programme (something drawn over or instead of the camera, or a transition running). */
   programActive(): boolean {
     return this.active;
@@ -160,7 +175,7 @@ export class StudioSceneCompositor implements SceneCompositor, OutputCompositor 
   }
 
   private programChanged(): void {
-    const local = localCompositing(this.program, this.rehearsal) && this.io !== null && typeof document !== "undefined";
+    const local = localCompositing(this.program, this.composesLocally) && this.io !== null && typeof document !== "undefined";
     if (local) {
       this.ensureProgramTools();
       this.tickProgram();
@@ -173,7 +188,7 @@ export class StudioSceneCompositor implements SceneCompositor, OutputCompositor 
   }
 
   private updateActive(): void {
-    const active = this.io !== null && programNeedsCanvas(this.program, this.rehearsal, this.transition !== null);
+    const active = this.io !== null && programNeedsCanvas(this.program, this.composesLocally, this.transition !== null);
     if (active === this.active) return;
     this.active = active;
     for (const cb of this.activeListeners) cb();
@@ -351,7 +366,7 @@ export class StudioSceneCompositor implements SceneCompositor, OutputCompositor 
     const cw = canvas.width;
     const ch = canvas.height;
     const view = this.program;
-    const local = view !== null && localCompositing(view, this.rehearsal) && this.assets !== null;
+    const local = view !== null && localCompositing(view, this.composesLocally) && this.assets !== null;
 
     // Scene layers: the incoming (current) scene, and the outgoing one while a transition runs.
     let sceneOut: SceneKind | null = null;

@@ -175,6 +175,10 @@ export interface StudioBridge {
   whipOffer(sdp: string): Promise<IpcResult<{ answer: string; resource: string }>>;
   whipPatch(resource: string, fragment: string): Promise<IpcResult<null>>;
   whipClose(resource: string): Promise<IpcResult<null>>;
+  /** WHIP of the web control room's preview (see `HeartbeatReply.preview`). */
+  previewWhipOffer(sdp: string): Promise<IpcResult<{ answer: string; resource: string }>>;
+  previewWhipPatch(resource: string, fragment: string): Promise<IpcResult<null>>;
+  previewWhipClose(resource: string): Promise<IpcResult<null>>;
   /** Setup mode: the programme as the orchestrator composes it, before any live (contract: `docs/studio-devices.md` of the sada repository). */
   setup: {
     enter(): Promise<IpcResult<SetupState>>;

@@ -136,6 +136,7 @@ export const fr = {
     idle: "Prêt",
     standby: "En veille",
     armed: "Armé, direct à {time}",
+    preview: "Retour envoyé à la régie web (hors antenne)",
     connecting: "Connexion…",
     live: "En direct",
     reconnecting: "Reconnexion… (essai {n})",

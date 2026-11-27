@@ -63,6 +63,12 @@ export interface KioskState {
   wantLive: boolean;
   /** Live actually targeted (manual first), for display. */
   live: CurrentLive | null;
+  /**
+   * The web control room asks for our picture (outside a live): the programme is sent to the preview endpoint,
+   * never to the public. Cleared when the server stops saying so, when it cannot be reached, and on air (the live
+   * stream is what the control room watches then).
+   */
+  preview: boolean;
 }
 
 export type KioskEvent =
@@ -108,6 +114,7 @@ export const INITIAL_KIOSK: KioskState = {
   notice: null,
   wantLive: false,
   live: null,
+  preview: false,
 };
 
 /** Restores an already paired device (startup). `suppressed` comes from the persisted state. */
@@ -150,7 +157,7 @@ export function kioskTransition(s: KioskState, e: KioskEvent, o: KioskOptions = 
       if (!isPaired(s)) return s;
       return { ...INITIAL_KIOSK, phase: "revoked", baseUrl: s.baseUrl, notice: { code: "revoked", message: e.message } };
     case "HEARTBEAT_FAILED":
-      return isPaired(s) && s.online ? { ...s, online: false } : s;
+      return isPaired(s) && (s.online || s.preview) ? { ...s, online: false, preview: false } : s;
     case "HEARTBEAT_OK": {
       if (!isPaired(s)) return s;
       const { reply, at } = e;
@@ -179,6 +186,7 @@ export function kioskTransition(s: KioskState, e: KioskEvent, o: KioskOptions = 
           manual,
           suppressed,
           conflict,
+          preview: reply.preview === true,
           // An answer without a (valid) profile keeps the last one: a live never changes size by accident.
           stream: sameProfile(s.stream, parseProfile(reply.config?.stream)) ?? s.stream,
         },
